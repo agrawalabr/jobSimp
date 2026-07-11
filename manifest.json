@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "JobSimp — Job Application Copilot",
+  "version": "0.1.0",
+  "description": "Track applications, autofill forms from your resume, AI-draft outreach emails, and get alerts for new relevant jobs.",
+  "permissions": ["storage", "alarms", "notifications", "identity", "activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "https://gmail.googleapis.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*",
+    "https://boards-api.greenhouse.io/*",
+    "https://api.lever.co/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "background": { "service_worker": "src/background/service-worker.js", "type": "module" },
+  "action": { "default_popup": "src/popup/popup.html", "default_title": "JobSimp" },
+  "options_page": "src/options/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.myworkdayjobs.com/*",
+        "https://boards.greenhouse.io/*",
+        "https://job-boards.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://www.linkedin.com/jobs/*",
+        "https://www.indeed.com/*",
+        "https://jobs.ashbyhq.com/*"
+      ],
+      "js": ["src/content/jobdetect.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "oauth2": {
+    "client_id": "REPLACE_WITH_YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/gmail.send"]
+  },
+  "web_accessible_resources": [
+    { "resources": ["src/dashboard/dashboard.html"], "matches": ["<all_urls>"] }
+  ]
+}
