@@ -1,8 +1,7 @@
 // Unit tests for pure modules (no Chrome APIs). Run: node run-tests.mjs
-import { buildEmailPrompt, buildRequest, parseDraft } from '../src/lib/ai.js';
-import { buildRfc2822, toBase64Url, parseRecipients } from '../src/lib/gmail.js';
-import { scoreJob, dedupeKey } from '../src/lib/scoring.js';
-import { normalizeGreenhouse, normalizeLever, normalizeSimplify, stripHtml } from '../src/lib/sources.js';
+import { buildRfc2822, toBase64Url, parseRecipients } from '../src/service/gmail.js';
+import { modelsFor, defaultModelFor, optionLabel, CONSUMPTION } from '../src/static/models.js';
+import { RESUME_PARSE_PROMPT, RESUME_PARSE_SCHEMA } from '../src/static/prompts.js';
 
 let pass = 0, fail = 0;
 function t(name, fn) {
@@ -14,51 +13,6 @@ function eq(a, b, msg = '') {
   if (ja !== jb) throw new Error(`${msg} expected ${jb}, got ${ja}`);
 }
 function ok(v, msg = 'expected truthy') { if (!v) throw new Error(msg); }
-
-console.log('\nai.js');
-t('buildEmailPrompt includes JD, resume, constraints', () => {
-  const p = buildEmailPrompt({ jdText: 'JD_MARKER', resumeText: 'RESUME_MARKER', company: 'Stripe', role: 'SWE', tone: 'formal' });
-  ok(p.includes('JD_MARKER') && p.includes('RESUME_MARKER'));
-  ok(p.includes('Stripe') && p.includes('SWE') && p.includes('formal'));
-  ok(p.includes('STRICT JSON'));
-});
-t('buildEmailPrompt truncates huge inputs', () => {
-  const p = buildEmailPrompt({ jdText: 'x'.repeat(20000), resumeText: 'y'.repeat(20000) });
-  ok(p.length < 15000, `prompt too long: ${p.length}`);
-});
-t('buildRequest gemini shape', () => {
-  const r = buildRequest('gemini', '', 'hi', 'KEY');
-  ok(r.url.includes('generativelanguage.googleapis.com') && r.url.includes('KEY'));
-  const body = JSON.parse(r.init.body);
-  eq(body.contents[0].parts[0].text, 'hi');
-  eq(r.extract({ candidates: [{ content: { parts: [{ text: 'out' }] } }] }), 'out');
-});
-t('buildRequest claude shape', () => {
-  const r = buildRequest('claude', 'claude-x', 'hi', 'KEY');
-  eq(r.init.headers['x-api-key'], 'KEY');
-  eq(JSON.parse(r.init.body).model, 'claude-x');
-  eq(r.extract({ content: [{ text: 'out' }] }), 'out');
-});
-t('buildRequest openai shape', () => {
-  const r = buildRequest('openai', '', 'hi', 'KEY');
-  eq(r.init.headers.Authorization, 'Bearer KEY');
-  eq(r.extract({ choices: [{ message: { content: 'out' } }] }), 'out');
-});
-t('buildRequest unknown provider throws', () => {
-  let threw = false; try { buildRequest('llama', '', 'hi', 'K'); } catch { threw = true; }
-  ok(threw);
-});
-t('parseDraft handles clean JSON', () => {
-  eq(parseDraft('{"subject":"S","body":"B"}'), { subject: 'S', body: 'B' });
-});
-t('parseDraft handles fenced/prefixed output', () => {
-  const d = parseDraft('Here you go:\n```json\n{"subject":"S","body":"line1\\nline2"}\n```');
-  eq(d.subject, 'S'); ok(d.body.includes('line1\nline2'));
-});
-t('parseDraft rejects missing fields', () => {
-  let threw = false; try { parseDraft('{"subject":"only"}'); } catch { threw = true; }
-  ok(threw);
-});
 
 console.log('\ngmail.js');
 t('buildRfc2822 basic structure', () => {
@@ -86,46 +40,34 @@ t('parseRecipients splits, validates, dedupes, lowercases', () => {
   eq(parseRecipients('junk, @@, foo@bar'), []);
 });
 
-console.log('\nscoring.js');
-t('scoreJob rewards keyword hits', () => {
-  const kws = ['python', 'sql', 'machine learning'];
-  const hi = scoreJob({ title: 'ML Engineer', description: 'python sql machine learning' }, kws);
-  const lo = scoreJob({ title: 'Accountant', description: 'ledgers and taxes' }, kws);
-  ok(hi > lo, `${hi} !> ${lo}`);
-  eq(lo, 0);
+console.log('\nmodels.js');
+t('each provider has models with valid consumption tiers', () => {
+  for (const p of ['gemini', 'claude', 'openai']) {
+    const list = modelsFor(p);
+    ok(list.length >= 3, `${p} needs models`);
+    for (const m of list) {
+      ok(m.id && m.label, `${p} model missing id/label`);
+      ok(CONSUMPTION.includes(m.consumption), `bad tier ${m.consumption}`);
+    }
+  }
 });
-t('scoreJob boosts new-grad, penalizes senior', () => {
-  const kws = ['python'];
-  const ng = scoreJob({ title: 'New Grad SWE', description: 'python' }, kws);
-  const sr = scoreJob({ title: 'Senior SWE', description: 'python' }, kws);
-  ok(ng > sr, `${ng} !> ${sr}`);
+t('defaults exist in each provider list', () => {
+  for (const p of ['gemini', 'claude', 'openai']) {
+    const id = defaultModelFor(p);
+    ok(modelsFor(p).some((m) => m.id === id), `${p} default ${id} missing`);
+  }
 });
-t('scoreJob clamps to 0..100 and handles empty keywords', () => {
-  eq(scoreJob({ title: 'x', description: 'y' }, []), 0);
-  const s = scoreJob({ title: 'new grad python', description: 'python '.repeat(50) }, ['python']);
-  ok(s >= 0 && s <= 100);
+t('optionLabel includes consumption', () => {
+  const m = modelsFor('gemini')[0];
+  ok(optionLabel(m).includes(m.consumption));
 });
-t('dedupeKey stable', () => eq(dedupeKey('lever', '123'), 'lever:123'));
 
-console.log('\nsources.js');
-t('normalizeGreenhouse maps fields + strips HTML', () => {
-  const n = normalizeGreenhouse('Stripe', {
-    id: 42, title: 'SWE', absolute_url: 'https://x', updated_at: '2026-07-01T00:00:00Z',
-    location: { name: 'NYC' }, content: '<p>Great &amp; fun</p>',
-  });
-  eq(n.source, 'greenhouse'); eq(n.externalId, '42'); eq(n.company, 'Stripe');
-  eq(n.location, 'NYC'); eq(n.description, 'Great & fun');
-});
-t('normalizeLever maps fields', () => {
-  const n = normalizeLever('Netflix', { id: 'abc', text: 'Data Eng', hostedUrl: 'https://l', createdAt: 1750000000000, categories: { location: 'Remote' }, descriptionPlain: 'desc' });
-  eq(n.source, 'lever'); eq(n.title, 'Data Eng'); eq(n.location, 'Remote'); eq(n.postedAt, 1750000000000);
-});
-t('normalizeSimplify handles array locations + epoch seconds', () => {
-  const n = normalizeSimplify({ id: 's1', company_name: 'Databricks', title: 'SWE New Grad', locations: ['NYC', 'SF'], url: 'https://s', date_posted: 1751000000, sponsorship: 'Offers Sponsorship' });
-  eq(n.location, 'NYC; SF'); eq(n.postedAt, 1751000000000); eq(n.sponsorshipFlag, 'Offers Sponsorship');
-});
-t('stripHtml removes tags and entities', () => {
-  eq(stripHtml('<div>Hello&nbsp;<b>world</b> &amp; more</div>'), 'Hello world & more');
+console.log('\nprompts.js');
+t('resume parse prompt is lossless + includes schema', () => {
+  ok(RESUME_PARSE_PROMPT.includes('deterministic resume parser'));
+  ok(RESUME_PARSE_PROMPT.includes('Never invent'));
+  ok(RESUME_PARSE_SCHEMA.includes('"description"'));
+  ok(RESUME_PARSE_SCHEMA.includes('"experiences"'));
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -3,114 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <title>JobSimp Settings</title>
-<style>
-:root{--bg:#0f1420;--card:#1a2130;--border:#2a3348;--text:#e8ecf4;--muted:#8b95ab;--accent:#4f8ef7;--green:#34c07a;--red:#e5604c}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);padding:28px;font-size:14px;max-width:860px;margin:0 auto}
-h1{font-size:20px;margin-bottom:20px}
-h2{font-size:15px;margin:26px 0 12px;color:var(--accent)}
-.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:6px}
-.field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
-.field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-input,select,textarea,button{background:#0f1420;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;width:100%}
-textarea{min-height:90px}
-button{cursor:pointer;width:auto}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.grid3{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end}
-.row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
-.hint{font-size:12px;color:var(--muted);margin-top:4px}
-#saveMsg{color:var(--green);font-size:13px;margin-left:12px}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-td,th{padding:6px 8px;border-top:1px solid var(--border);text-align:left;font-size:13px}
-th{color:var(--muted);font-size:11px;text-transform:uppercase;border:none}
-.small{padding:3px 8px;font-size:12px}
-@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}}
-</style>
+<script>
+  location.replace(chrome.runtime.getURL('src/component/dashboard/dashboard.html?tab=settings'));
+</script>
 </head>
 <body>
-<h1>⚙️ JobSimp Settings</h1>
-
-<h2>AI Provider</h2>
-<div class="card">
-  <div class="grid2">
-    <div class="field"><label>Active provider</label>
-      <select id="ai_provider"><option value="gemini">Gemini</option><option value="claude">Claude</option><option value="openai">OpenAI (GPT)</option></select></div>
-    <div class="field"><label>Model (blank = sensible default)</label><input id="ai_model" placeholder="e.g. gemini-2.0-flash / claude-haiku-4-5 / gpt-4o-mini"></div>
-  </div>
-  <div class="field"><label>Gemini API key</label><input type="password" id="key_gemini"></div>
-  <div class="field"><label>Claude API key</label><input type="password" id="key_claude"></div>
-  <div class="field"><label>OpenAI API key</label><input type="password" id="key_openai"></div>
-  <div class="hint">Keys are stored locally in your browser only, and sent only to the respective provider's API.</div>
-</div>
-
-<h2>Email</h2>
-<div class="card">
-  <div class="grid2">
-    <div class="field"><label>From name</label><input id="gmail_fromName" placeholder="Abhishek Agrawal"></div>
-    <div class="field"><label>Email tone</label><input id="tmpl_tone" placeholder="concise, warm, confident"></div>
-  </div>
-  <div class="field"><label>Signature (appended to drafts)</label><textarea id="tmpl_signature" placeholder="Abhishek Agrawal&#10;MS CS, NYU · linkedin.com/in/…"></textarea></div>
-  <div class="hint">Sending uses Gmail OAuth — you'll be asked to sign in on first send. Requires OAuth client ID in manifest.json (see README).</div>
-</div>
-
-<h2>Resume & Profile</h2>
-<div class="card">
-  <div class="field"><label>Resume plain text (feeds AI drafting + autofill)</label><textarea id="resumeText" style="min-height:160px" placeholder="Paste your full resume text here…"></textarea></div>
-  <div class="grid2">
-    <div class="field"><label>First name</label><input id="b_firstName"></div>
-    <div class="field"><label>Last name</label><input id="b_lastName"></div>
-    <div class="field"><label>Email</label><input id="b_email"></div>
-    <div class="field"><label>Phone</label><input id="b_phone"></div>
-    <div class="field"><label>LinkedIn URL</label><input id="b_linkedin"></div>
-    <div class="field"><label>GitHub URL</label><input id="b_github"></div>
-    <div class="field"><label>City</label><input id="b_city"></div>
-    <div class="field"><label>State</label><input id="b_state"></div>
-    <div class="field"><label>University</label><input id="b_university"></div>
-    <div class="field"><label>Degree</label><input id="b_degree"></div>
-    <div class="field"><label>Major</label><input id="b_major"></div>
-    <div class="field"><label>Grad date</label><input id="b_gradDate" placeholder="May 2026"></div>
-    <div class="field"><label>Authorized to work in US?</label><input id="b_workAuth" placeholder="Yes"></div>
-    <div class="field"><label>Require sponsorship?</label><input id="b_needsSponsorship" placeholder="Yes (F-1 OPT, STEM eligible)"></div>
-  </div>
-  <div class="field"><label>Skill keywords (comma separated — used for job relevance scoring)</label>
-    <input id="keywords" placeholder="python, machine learning, sql, react, data engineer, software engineer"></div>
-</div>
-
-<h2>Q&A Bank (autofill answers)</h2>
-<div class="card">
-  <div class="grid3">
-    <div class="field"><label>Question / field label</label><input id="qa_question" placeholder="Why do you want to work here?"></div>
-    <div class="field"><label>Match patterns (comma sep)</label><input id="qa_patterns" placeholder="why do you want, motivation"></div>
-    <div class="field"><label>Answer</label><input id="qa_answer"></div>
-    <button class="primary" id="qa_add">Add</button>
-  </div>
-  <table><thead><tr><th>Question</th><th>Patterns</th><th>Answer</th><th></th></tr></thead><tbody id="qa_rows"></tbody></table>
-</div>
-
-<h2>Job Alerts</h2>
-<div class="card">
-  <div class="grid2">
-    <div class="field"><label>Poll interval (hours)</label><input type="number" id="poll_interval" min="1" max="48" value="6"></div>
-    <div class="field"><label>Min relevance score to notify (0–100)</label><input type="number" id="poll_minScore" min="0" max="100" value="40"></div>
-  </div>
-  <div class="row"><input type="checkbox" id="poll_simplify" style="width:auto"><label for="poll_simplify" style="font-size:13px">Include SimplifyJobs new-grad feed (broad market coverage)</label></div>
-  <div class="field" style="margin-top:10px"><label>Target companies (ATS polling)</label></div>
-  <div class="grid3">
-    <div class="field"><label>Company name</label><input id="t_company" placeholder="Stripe"></div>
-    <div class="field"><label>ATS</label><select id="t_ats"><option value="greenhouse">Greenhouse</option><option value="lever">Lever</option></select></div>
-    <div class="field"><label>Board slug</label><input id="t_slug" placeholder="stripe"></div>
-    <button class="primary" id="t_add">Add</button>
-  </div>
-  <div class="hint">Slug = the company identifier in their job board URL: boards.greenhouse.io/<b>stripe</b> or jobs.lever.co/<b>netflix</b></div>
-  <table><thead><tr><th>Company</th><th>ATS</th><th>Slug</th><th></th></tr></thead><tbody id="t_rows"></tbody></table>
-</div>
-
-<div style="margin:20px 0 40px">
-  <button class="primary" id="saveAll" style="padding:12px 28px">💾 Save All Settings</button>
-  <span id="saveMsg"></span>
-</div>
-
-<script src="options.js"></script>
+<p>Redirecting to Dashboard Settings…</p>
 </body>
 </html>

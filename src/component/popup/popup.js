@@ -2,22 +2,32 @@ const send = (type, payload) => new Promise((r) => chrome.runtime.sendMessage({ 
 const msg = (t) => { document.getElementById('msg').textContent = t; };
 
 async function refresh() {
-  const [jobsRes, discRes] = await Promise.all([send('job.list'), send('discovered.list')]);
+  const auth = await send('auth.get');
+  if (!auth?.data) {
+    document.body.innerHTML = '<h1>JobSimp</h1><p style="color:var(--muted);margin:10px 0">Sign in with Google to get started.</p><button class="primary" id="setup" style="text-align:center">Sign in / Setup</button>';
+    document.getElementById('setup').onclick = () => send('open.onboarding');
+    return;
+  }
+  const jobsRes = await send('job.list');
   const jobs = jobsRes?.data || [];
   const active = ['OA', 'Phone Screen', 'Interview', 'Final Round'];
-  const newJobs = (discRes?.data || []).filter((d) => d.state === 'new' || d.state === 'notified');
   const today = new Date().toISOString().slice(0, 10);
   const due = jobs.filter((j) => j.followup && j.followup <= today && !['Offer', 'Rejected', 'Withdrawn'].includes(j.status));
 
   document.getElementById('stats').innerHTML = [
-    ['Tracked', jobs.length], ['Active', jobs.filter((j) => active.includes(j.status)).length], ['New leads', newJobs.length],
+    ['Tracked', jobs.length], ['Active', jobs.filter((j) => active.includes(j.status)).length],
+    ['Offers', jobs.filter((j) => j.status === 'Offer').length],
   ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
   document.getElementById('due').textContent = due.length ? `⚠ ${due.length} follow-up${due.length > 1 ? 's' : ''} due` : '';
 }
 
-document.getElementById('openDash').onclick = () =>
-  chrome.tabs.create({ url: chrome.runtime.getURL('src/dashboard/dashboard.html') });
-document.getElementById('openOptions').onclick = () => chrome.runtime.openOptionsPage();
+const dash = (tab) => chrome.tabs.create({
+  url: chrome.runtime.getURL(`src/component/dashboard/dashboard.html${tab ? `?tab=${tab}` : ''}`),
+});
+document.getElementById('openDash').onclick = () => dash();
+document.getElementById('openSettings').onclick = () => dash('settings');
+document.getElementById('openProfile').onclick = () => dash('profile');
+document.getElementById('openResume').onclick = () => dash('resume');
 
 document.getElementById('autofill').onclick = async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -49,13 +59,6 @@ document.getElementById('trackPage').onclick = async () => {
     msg(res?.ok ? `Tracked: ${result.role}\nEdit company/details in Dashboard.` : `Failed: ${res?.error}`);
     refresh();
   } catch (e) { msg(`Cannot read this page: ${e.message}`); }
-};
-
-document.getElementById('pollNow').onclick = async () => {
-  msg('Checking sources…');
-  const res = await send('poll.now');
-  msg(res?.ok ? `Found ${res.data} new relevant job(s).` : `Poll failed: ${res?.error}`);
-  refresh();
 };
 
 refresh();

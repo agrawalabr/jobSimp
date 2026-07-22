@@ -1,6 +1,23 @@
 # JobSimp — Data Model
 
-Database: IndexedDB `jobsimp`, version 1. Five object stores. Settings/API keys live in `chrome.storage.local` (not IndexedDB).
+Database: IndexedDB `jobsimp`, version 2. Six object stores. Settings/API keys/auth live in `chrome.storage.local` (not IndexedDB).
+
+## Store: `resumes` (keyPath: `id`, autoIncrement) — v2
+Multi-resume manager (requirement: manage multiple resumes, AI-parsed).
+
+| Field | Type | Notes |
+|---|---|---|
+| id | number | PK |
+| name | string | e.g. "SWE Resume", "Data Resume" |
+| mime | string | `application/pdf` or `text/plain` |
+| dataB64 | string | original file (base64) for PDF parsing |
+| text | string | plain text (pasted or .txt) |
+| parsed | object \| null | AI extraction (lossless): `{name, email, phone, address, links{linkedin,github,portfolio,other[{label,url,url_unresolved}]}, summary, skills[], experiences[{company,role,employment_type,location,start,end,technologies[],project_name,description[]}], projects[{name,description[],technologies[],dates,url}], education[{school,degree,major,location,start,end,gpa,honors[],coursework[]}], certifications[{name,issuer,date,credential_id,credential_url}]}`. Prompt: `src/static/prompts.js`. |
+| isDefault | bool | used when widget has no explicit selection |
+| createdAt, parsedAt | number | |
+
+## chrome.storage.local additions (v2)
+`auth` = `{email, name, picture, signedInAt}` (Google identity) · `onboarded` = bool (registration gate) · `widgetResumeId` = number (resume selected in floating widget)
 
 ## Store: `jobs` (keyPath: `id`, autoIncrement)
 The application tracker. Covers requirement #1 exactly.
@@ -29,7 +46,7 @@ Singleton-ish key/value rows. Requirement #2.
 | `resumeText` | full plain-text resume (feeds AI + autofill) |
 | `resumeFile` | `{name, mime, dataB64}` original PDF/docx for upload-field autofill |
 | `basics` | `{firstName, lastName, email, phone, address, city, state, zip, linkedin, github, portfolio, workAuth, needsSponsorship, university, degree, major, gradDate, gpa}` |
-| `keywords` | string[] — skills for job relevance scoring |
+| `keywords` | string[] — skill keywords (profile / autofill hints) |
 
 ## Store: `answers` (keyPath: `id`, autoIncrement)
 Q&A bank for application-form autofill.
@@ -60,15 +77,15 @@ Outreach log. Requirement #3.
 Index: `jobId`.
 
 ## Store: `discovered` (keyPath: `key`)
-Deduped feed of jobs found by polling/on-page detection. Requirement #4.
+Legacy poll-feed store. Background ATS polling is removed; this store will be redesigned for widget-seen JD×resume discoveries (local-only).
 
 | Field | Type | Notes |
 |---|---|---|
-| key | string | `${source}:${externalId}` — natural PK prevents re-notification |
+| key | string | historically `${source}:${externalId}` |
 | source | enum | `greenhouse · lever · simplify · page` |
 | company, title, location, url | string | |
 | postedAt | number | |
-| score | number 0–100 | relevance vs profile.keywords |
+| score | number 0–100 | |
 | seenAt | number | |
 | state | enum | `new · notified · dismissed · tracked` — indexed |
 
@@ -79,7 +96,6 @@ Index: `state`, `score`.
 {
   "ai": {"provider": "gemini|claude|openai", "keys": {"gemini": "", "claude": "", "openai": ""}, "model": ""},
   "gmail": {"enabled": true, "fromName": "Abhishek Agrawal"},
-  "polling": {"intervalHours": 6, "targets": [{"company": "Stripe", "ats": "greenhouse", "slug": "stripe"}], "simplifyFeed": true, "minScore": 40},
   "emailTemplate": {"tone": "concise, warm", "signature": "..."}
 }
 ```

@@ -1,0 +1,99 @@
+<style>
+*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.panel{position:fixed;top:0;right:0;height:100vh;width:300px;max-width:94vw;background:#141a28;color:#e8ecf4;
+  border-left:1px solid #2a3348;box-shadow:-8px 0 32px rgba(0,0,0,.5);transform:translateX(100%);
+  transition:transform .22s ease;display:flex;flex-direction:column;pointer-events:auto;font-size:13px;z-index:2}
+.panel.open{transform:none}
+.hd{display:flex;align-items:center;gap:10px;padding:14px 16px;background:#0f1420;border-bottom:1px solid #2a3348;flex:0 0 auto}
+.hd img{width:30px;height:30px;border-radius:50%;display:none}
+.hd .brand{font-weight:800;font-size:15px}
+.hd .dot{color:#34c07a;font-size:10px}
+.hd .who{font-size:11px;color:#8b95ab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.x{margin-left:auto;background:none;border:none;color:#8b95ab;font-size:20px;cursor:pointer;line-height:1;padding:2px 6px}
+.x:hover{color:#fff}
+.bd{padding:14px 16px;overflow-y:auto;flex:1 1 auto}
+.sect{margin-bottom:16px}
+.role{font-size:16px;font-weight:700;line-height:1.25}
+.company{color:#a9b4cc;margin-top:2px}
+.meta{margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
+.mrow{display:flex;flex-direction:column;background:#0f1420;border:1px solid #23304a;border-radius:8px;padding:6px 8px}
+.mk{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#8b95ab}
+.mv{font-size:12px;margin-top:1px;word-break:break-word}
+.src{margin-top:8px;font-size:11px}
+.src a{color:#4f8ef7;text-decoration:none}
+.lbl{font-size:10px;color:#8b95ab;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 4px}
+select,button{width:100%;background:#0f1420;border:1px solid #2a3348;color:#e8ecf4;border-radius:8px;padding:9px 12px;font-size:13px;cursor:pointer}
+button{margin-top:8px}
+button.primary{background:#4f8ef7;border-color:#4f8ef7;font-weight:600}
+button:disabled{opacity:.55;cursor:default}
+.scoreRow{display:flex;justify-content:space-between;align-items:baseline}
+.scoreRow b{font-size:24px}
+.scorebar{height:8px;border-radius:4px;background:#2a3348;margin:6px 0 4px;overflow:hidden}
+.scorebar>div{height:100%;border-radius:4px;width:0;transition:width .3s}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-height:96px;overflow:auto}
+.chip{font-size:10px;padding:2px 8px;border-radius:10px;background:#1f4a2c;color:#6fe89a}
+.chip.miss{background:#4a1f24;color:#f08585}
+ul.clean{list-style:none;margin:4px 0 0;padding:0}
+ul.clean li{position:relative;padding:4px 6px 4px 16px;font-size:12px;line-height:1.4;border-bottom:1px solid #1c2434}
+ul.clean li:before{content:'›';position:absolute;left:2px;color:#4f8ef7}
+ul.clean li.gap:before{content:'!';color:#e8b13f}
+ul.clean li.add:before{content:'+';color:#34c07a}
+ul.clean li.muted{color:#8b95ab;border:none}
+.an_summary{background:#0f1420;border:1px solid #23304a;border-radius:8px;padding:10px;font-size:12px;line-height:1.5}
+.msg{font-size:12px;color:#e8b13f;min-height:14px;white-space:pre-wrap;margin-top:8px}
+.muted{color:#8b95ab}
+.ai_state{font-size:11px;color:#8b95ab;margin-top:4px;min-height:12px}
+</style>
+<div class="panel" id="panel">
+  <div class="hd">
+    <img id="pic" alt="">
+    <div style="min-width:0">
+      <div class="brand">JobSimp <span class="dot">● active</span></div>
+      <div class="who" id="who">Not signed in</div>
+    </div>
+    <button class="x" id="closeBtn" title="Close" type="button">✕</button>
+  </div>
+  <div class="bd">
+    <div id="authGate" style="display:none">
+      <button class="primary" id="setupBtn" type="button">Sign in / finish setup</button>
+      <div class="muted" style="font-size:12px;margin-top:6px">Registration required to use JobSimp.</div>
+    </div>
+    <div id="main" style="display:none">
+      <div class="sect" id="jobCard" style="display:none">
+        <div class="role" id="jd_role">—</div>
+        <div class="company" id="jd_company"></div>
+        <div class="meta" id="jd_meta"></div>
+        <div class="src" id="jd_src"></div>
+      </div>
+      <div id="noJd" class="muted" style="margin:4px 0">No job description detected on this page.</div>
+
+      <div class="lbl">Resume</div>
+      <select id="resumeSel"></select>
+
+      <div id="matchBox" style="display:none">
+        <div class="lbl">Resume ↔ JD match</div>
+        <div class="scoreRow"><b id="scoreTxt">0%</b><span class="muted" id="matchCounts"></span></div>
+        <div class="scorebar"><div id="scoreFill"></div></div>
+        <div class="lbl">JD requirements you have</div><div class="chips" id="matchedChips"></div>
+        <div class="lbl">Required by JD · missing from resume</div><div class="chips" id="missingChips"></div>
+      </div>
+
+      <button class="primary" id="analyzeBtn" type="button">Analyze fit with AI</button>
+      <div class="ai_state" id="aiState"></div>
+
+      <div id="analysisBox" style="display:none">
+        <div class="lbl">Summary</div>
+        <div class="an_summary" id="an_summary"></div>
+        <div class="lbl">Strengths</div><ul class="clean" id="an_strengths"></ul>
+        <div class="lbl">Gaps</div><ul class="clean" id="an_gaps"></ul>
+        <div class="lbl">Suggested resume additions</div><ul class="clean" id="an_add"></ul>
+      </div>
+
+      <div style="margin-top:14px">
+        <button id="trackBtn" type="button">Track this job</button>
+        <button id="autofillBtn" type="button">Autofill with selected resume</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+</div>

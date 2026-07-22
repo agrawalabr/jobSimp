@@ -1,4 +1,5 @@
-// Gmail send via chrome.identity OAuth + Gmail REST API (scope: gmail.send only).
+// Gmail send via HTTPS OAuth (launchWebAuthFlow) + Gmail REST API (scope: gmail.send only).
+import { getAccessToken, clearAccessToken } from './oauth.js';
 
 export function buildRfc2822({ to, from, fromName, subject, body }) {
   // RFC 2047 encode subject if non-ASCII
@@ -30,18 +31,12 @@ export function toBase64Url(s) {
   return b64(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function getAuthToken(interactive = true) {
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive }, (token) => {
-      if (chrome.runtime.lastError || !token) {
-        reject(new Error(chrome.runtime.lastError?.message || 'OAuth failed. Check manifest oauth2.client_id.'));
-      } else resolve(token);
-    });
-  });
+export async function getAuthToken(interactive = true) {
+  return getAccessToken(interactive);
 }
 
 export async function sendEmail({ to, subject, body, fromName }) {
-  const token = await getAuthToken(true);
+  const token = await getAccessToken(true);
   // "me" resolves the authenticated account as the sender
   const raw = toBase64Url(buildRfc2822({ to, from: 'me', fromName, subject, body }));
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
@@ -51,8 +46,8 @@ export async function sendEmail({ to, subject, body, fromName }) {
   });
   if (!res.ok) {
     if (res.status === 401) { // stale token — clear and retry once
-      await new Promise((r) => chrome.identity.removeCachedAuthToken({ token }, r));
-      const t2 = await getAuthToken(true);
+      await clearAccessToken();
+      const t2 = await getAccessToken(true);
       const res2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
         method: 'POST',
         headers: { Authorization: `Bearer ${t2}`, 'Content-Type': 'application/json' },

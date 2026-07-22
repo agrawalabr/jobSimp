@@ -1,0 +1,137 @@
+erDiagram
+    USER ||--|| PROFILE : "has"
+    USER ||--|| METRICS : "has"
+    USER ||--o{ RESUME : "manages"
+    USER ||--o{ APPLICATION : "tracks"
+    USER ||--o{ ANSWER : "saves"
+
+    RESUME ||--o{ EXPERIENCE : "HAS"
+    RESUME ||--o{ PROJECT : "HAS"
+    RESUME ||--o{ EDUCATION : "HAS"
+    RESUME ||--o{ CERTIFICATION : "HAS"
+    RESUME }o--o{ SKILL : "MENTIONS"
+
+    EXPERIENCE ||--o{ BULLET : "HAS"
+    PROJECT ||--o{ BULLET : "HAS"
+    BULLET }o--o{ SKILL : "DEMONSTRATES"
+    SKILL }o--o{ SKILL : "ALIAS_OF"
+
+    JD }o--o{ SKILL : "REQUIRES"
+    APPLICATION }o--|| JD : "FOR"
+    APPLICATION }o--o| RESUME : "USED"
+    APPLICATION ||--o{ EMAIL : "outreach"
+    DISCOVERED }o--o| JD : "tracked-as"
+
+    USER {
+        string email PK "Google identity"
+        string name
+        string picture
+        number signedInAt
+    }
+    PROFILE {
+        string entityId PK "profile:{uuid}"
+        string phone
+        string address
+        json links "linkedin, github, portfolio, other[]"
+    }
+    METRICS {
+        string entityId PK "metrics:{uuid} - EEO constants"
+        string ethnicity
+        string veteranStatus
+        string disabilityStatus
+        string workAuth
+        string needsSponsorship
+        string salaryExpectation
+        string relocation
+    }
+    RESUME {
+        string entityId PK "resume:{uuid}"
+        string name "e.g. SWE Resume"
+        string mime
+        string dataB64 "original file"
+        string text "plain text"
+        json parsed "LLM extraction"
+        boolean isDefault
+        number parsedAt
+    }
+    EXPERIENCE {
+        string nodeKey PK "resumeId:expN"
+        string company
+        string role
+        string start
+        string end
+        string location
+    }
+    PROJECT {
+        string nodeKey PK "resumeId:projN"
+        string projName
+        string url
+        json technologies
+    }
+    BULLET {
+        string nodeKey PK "parentKey:bN"
+        string text "VERBATIM from resume"
+        number order
+    }
+    SKILL {
+        string nodeKey PK "skill|{normalized}"
+        string label "display casing"
+        string normKey "lowercase dedupe key"
+    }
+    EDUCATION {
+        string nodeKey PK
+        string school
+        string degree
+        string major
+        string gpa
+    }
+    CERTIFICATION {
+        string nodeKey PK
+        string certName
+    }
+    JD {
+        string entityId PK "jd:{uuid}"
+        string company
+        string role
+        string jdText "scraped, max 12k chars"
+        string url
+        string source "linkedin, greenhouse..."
+        json requiredSkills "extracted, weighted"
+    }
+    APPLICATION {
+        string entityId PK "job:{uuid}"
+        string date "applied date"
+        string status "ToApply..Offer/Rejected"
+        string sponsorship "Yes/No/Unknown"
+        string everify "Yes/No/Unknown"
+        string followup "due date"
+        string referral "Yes/No"
+        string salary
+        string notes
+    }
+    EMAIL {
+        string entityId PK "email:{uuid}"
+        string toAddr
+        string subject
+        string body
+        string status "draft/sent/failed"
+        string gmailId
+        string provider "AI used for draft"
+        number sentAt
+    }
+    ANSWER {
+        string entityId PK "answer:{uuid}"
+        string question
+        json patterns "label match fragments"
+        string answerText
+        number useCount
+    }
+    DISCOVERED {
+        string entityId PK "source:externalId dedupe"
+        string source "greenhouse/lever/simplify/page"
+        string company
+        string title
+        number score "relevance 0-100"
+        string state "new/notified/dismissed/tracked"
+        number postedAt
+    }

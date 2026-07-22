@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Welcome to JobSimp</title>
+<style>
+:root{--bg:#0f1420;--card:#1a2130;--border:#2a3348;--text:#e8ecf4;--muted:#8b95ab;--accent:#4f8ef7;--green:#34c07a;--red:#e5604c}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);padding:36px;font-size:14px;max-width:760px;margin:0 auto}
+h1{font-size:30px;margin-bottom:5px;margin-top:10px;}
+h2{font-size:20px;margin:28px 0 12px;color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:8px}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+input,select,textarea,button{background:#0f1420;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 13px;font-size:13px;font-family:inherit;width:100%}
+textarea{min-height:88px}
+button{cursor:pointer;width:auto}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.grid3{display:grid;grid-template-columns:2fr 1fr 1.2fr auto;gap:8px;align-items:end}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.center{text-align:center;}
+.hint{font-size:13px;color:var(--muted);margin-top:3px}
+.stepper{display:flex;gap:7px;margin-bottom:28px}
+.step{flex:1;text-align:center;padding:9px 0 8px 0;font-weight:600;font-size:13px;border-radius:10px;border:1.5px solid var(--border);background:var(--card)}
+.step.active{border-color:var(--accent);color:var(--text)}
+.step.done{border-color:var(--green);color:var(--text);}
+.step.upcoming{background:var(--card);color:var(--muted)}
+.err{color:var(--red);font-size:13px;min-height:19px;margin-top:2px;white-space:pre-wrap}
+.btn-wrap{position:relative;display:inline-block}
+.btn-wrap .btn-overlay{
+  display:none;position:absolute;inset:0;border-radius:8px;
+  background:rgba(15,20,32,.55);cursor:not-allowed;
+}
+.btn-wrap.is-disabled .btn-overlay{display:block}
+.btn-wrap.is-disabled button.primary{opacity:.45;pointer-events:none}
+.btn-wrap .btn-overlay::after{
+  content:attr(data-hint);position:absolute;left:50%;bottom:calc(100% + 8px);
+  transform:translateX(-50%);white-space:nowrap;padding:6px 10px;border-radius:6px;
+  background:#0f1420;border:1px solid var(--border);color:var(--muted);font-size:12px;
+  opacity:0;pointer-events:none;transition:opacity .15s;
+}
+.btn-wrap.is-disabled .btn-overlay:hover::after{opacity:1}
+
+/* Resume step */
+.upload-zone{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center; border:1.5px dashed var(--border);border-radius:12px;padding:22px 18px;background:linear-gradient(180deg,#121826 0%,#0f1420 100%);margin-bottom:14px;cursor:pointer;transition:border-color .15s,background .15s;
+}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:#141c2c}
+.upload-zone .uz-icon{font-size:28px;margin-bottom:8px;opacity:.9}
+.upload-zone .uz-title{font-weight:600;margin-bottom:4px}
+.upload-zone .uz-sub{font-size:12px;color:var(--muted)}
+.upload-zone input[type=file]{display:none}
+.alt-row{display:flex;align-items:center;gap:10px;margin:4px 0 14px;flex-wrap:wrap}
+.alt-row .divider{flex:1;height:1px;background:var(--border)}
+.ghost-btn{
+  font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);
+  color:#7db4f0;background:#1e3a5f;cursor:pointer;width:auto;
+}
+.ghost-btn:hover{border-color:#4f8ef7}
+.paste-box{
+  display:none;background:#0f1420;border:1px solid var(--border);border-radius:12px;
+  padding:14px;margin-bottom:16px;
+}
+.resume-list{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.rz{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+  background:#0f1420;border:1px solid var(--border);border-radius:12px;padding:14px 16px;
+}
+.rz-main{min-width:0;flex:1}
+.rz-title{font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rz-meta{font-size:12px;color:var(--muted);margin-top:4px}
+.rz-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+button.small{padding:5px 10px;font-size:12px;width:auto;white-space:nowrap}
+.badge{font-size:11px;padding:2px 8px;border-radius:12px;background:#1f4a2c;color:var(--green);font-weight:600}
+.badge.pending{background:#4a3a1f;color:#e8b13f}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font-size:11px;padding:3px 9px;border-radius:12px;background:#1e3a5f;color:#7db4f0}
+.section-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px}
+details{margin-top:10px}summary{cursor:pointer;color:var(--muted);font-size:12px}
+pre{background:#121826;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:11px;overflow:auto;max-height:220px;white-space:pre-wrap;margin-top:6px}
+
+/* Editable parsed resume panel */
+.edit-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-top:12px}
+.edit-panel h3{font-size:16px;margin-bottom:16px;color:var(--accent)}
+.edit-section{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.edit-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.edit-section-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.edit-section-title button{font-size:11px;padding:3px 10px;width:auto}
+.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.edit-grid.full{grid-template-columns:1fr}
+.edit-field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px}
+.edit-field input,.edit-field textarea{width:100%;font-size:13px;padding:8px 10px}
+.edit-field textarea{min-height:60px;resize:vertical}
+.entry-card{background:#0f1420;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;position:relative}
+.entry-card .remove-entry{position:absolute;top:8px;right:8px;font-size:11px;padding:2px 8px;width:auto;color:var(--red);border-color:var(--red);background:none}
+.skill-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.skill-tag{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:4px 10px;border-radius:16px;background:#1e3a5f;color:#7db4f0;border:1px solid transparent}
+.skill-tag .remove-skill{cursor:pointer;opacity:.6;font-size:14px;line-height:1}
+.skill-tag .remove-skill:hover{opacity:1;color:var(--red)}
+.add-skill-row{display:flex;gap:6px;margin-top:8px}
+.add-skill-row input{flex:1;font-size:12px;padding:6px 10px}
+.add-skill-row button{width:auto;font-size:12px;padding:6px 14px}
+.edit-actions{display:flex;justify-content:space-between;margin-top:16px}
+
+@media(max-width:700px){
+  body{padding:14px;}
+  .card{padding:12px;}
+  .stepper{gap:3px;}
+}
+</style>
+</head>
+<body>
+<h1 class="center">👋 Welcome to JobSimp</h1>
+<div class="hint center" style="margin-bottom:24px">Three quick steps and you're set up.</div>
+
+<div class="stepper">
+  <div class="step active" id="s1">1 · Sign in</div>
+  <div class="step upcoming" id="s2">2 · AI key</div>
+  <div class="step upcoming" id="s3">3 · Resumes</div>
+</div>
+
+<!-- Sign in Panel -->
+<div id="p1" style="display:block">
+  <div class="card">
+    <h2 style="margin:7px 0 15px 0;font-size:20px">Register with your Google account</h2>
+    <div class="hint" style=" margin:0 0 35px 0;font-size:13px">
+      Your Google account is used to personalize your experience and send outreach emails on your behalf.<br>
+      When you sign in, a Google window will open to securely authenticate your account.<br>
+      <b>Note:</b> JobSimp only requests permission to <b>send email</b>. It will <b>never</b> read, access, or manage your inbox.
+    </div>
+    <div id="signedOut">
+      <button class="primary" id="signinBtn" style="width:100%;padding:15px 0;font-size:15px;margin-bottom:7px">Sign in with Google</button>
+    </div>
+    <div id="signedIn" style="display:none;align-items:center;gap:12px;background:#0f1420;border:1px solid var(--green);border-radius:8px;padding:8px 15px 7px 8px;margin-bottom:8px">
+      <img id="u_pic" alt="" style="width:46px;height:46px;border-radius:100%">
+      <div style="flex:1 1 0">
+        <div id="u_name" style="font-weight:600"></div>
+        <div id="u_email" style="color:var(--muted);font-size:11.7px"></div>
+      </div>
+      <button style="font-size:12px;padding:4px 9px;border-radius:7px;background:none;border:1px solid var(--border);color:var(--text);margin-left:auto" id="signoutBtn">Sign out</button>
+    </div>
+    <div class="err" id="err1"></div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:16px">
+    <div class="btn-wrap is-disabled" id="next1Wrap">
+      <button class="primary" id="next1" style="padding:12px 30px" disabled>Continue →</button>
+      <div class="btn-overlay" data-hint="Sign in with Google to continue" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
+
+<!-- AI provider Panel -->
+<div id="p2" style="display:none">
+  <div class="card">
+    <h2 style="margin:0 0 10px 0;font-size:15px">Connect an AI provider</h2>
+    <div class="hint" style="margin-bottom:18px;font-size:13px">
+      Used to parse your resumes and draft outreach emails. Stored locally, sent only to the provider you pick.
+    </div>
+    <div class="field"><label>Provider</label>
+      <select id="ai_provider"></select>
+    </div>
+    <div class="field"><label>API key</label>
+      <input type="password" id="ai_key" placeholder="Paste your key">
+    </div>
+    <div class="field"><label>Model</label>
+      <select id="ai_model"></select>
+    </div>
+    <div class="hint" id="modelHint"></div>
+    <div class="err" id="err2"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-top:15px">
+    <button id="back2" style="padding:9px 22px;border-radius:8px;background:none;border:1px solid var(--border);color:var(--text)">← Back</button>
+    <div class="btn-wrap is-disabled" id="next2Wrap">
+      <button class="primary" id="next2" style="padding:12px 30px" disabled>Save & Continue →</button>
+      <div class="btn-overlay" data-hint="Enter an API key to continue" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Resume upload Panel -->
+<div id="p3" style="display:none">
+  <div class="card">
+    <h2 style="margin:0 0 8px 0;font-size:20px">Upload your resume(s)</h2>
+    <div class="hint" style="margin-bottom:18px">
+      Add one or more versions (e.g. SWE, Data). Each is AI-parsed into skills, experience, and contact info for autofill and match scoring.
+    </div>
+
+    <label class="upload-zone" id="dropZone" for="file">
+      <div class="uz-icon">📄</div>
+      <div class="uz-title">Drop PDF, .docx, or .txt here</div>
+      <div class="uz-sub">or click to browse · multiple files OK</div>
+      <input type="file" id="file" accept=".pdf,.txt,.docx" multiple>
+    </label>
+
+    <div class="alt-row">
+      <div class="divider"></div>
+      <span class="hint" style="margin:0">or</span>
+      <div class="divider"></div>
+    </div>
+    <div style="text-align:center;margin-bottom:14px">
+      <button type="button" class="ghost-btn" id="pasteBtn">Paste resume text</button>
+    </div>
+
+    <div class="paste-box" id="pasteArea">
+      <div class="field"><label>Resume name</label>
+        <input id="pasteName" placeholder="SWE Resume">
+      </div>
+      <div class="field"><label>Text</label>
+        <textarea id="pasteText" rows="8" placeholder="Paste the full resume text…"></textarea>
+      </div>
+      <button class="primary" id="pasteSave" style="font-size:13px;padding:8px 18px;">Add resume</button>
+    </div>
+
+    <div class="section-label" id="resumeListLabel">Your resumes</div>
+    <div class="resume-list" id="resumeList"></div>
+    <div class="err" id="err3"></div>
+  </div>
+
+  <!-- Editable parsed resume fields (shown after Parse) -->
+  <div id="editPanel" style="display:none">
+    <div class="edit-panel">
+      <h3>Review & edit parsed resume <span id="editResumeName" style="color:var(--text);font-weight:400;font-size:14px"></span></h3>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Contact</div>
+        <div class="edit-grid">
+          <div class="edit-field"><label>Full name</label><input id="ed_name"></div>
+          <div class="edit-field"><label>Email</label><input id="ed_email"></div>
+          <div class="edit-field"><label>Phone</label><input id="ed_phone"></div>
+          <div class="edit-field"><label>Address</label><input id="ed_address"></div>
+          <div class="edit-field"><label>LinkedIn URL</label><input id="ed_linkedin"></div>
+          <div class="edit-field"><label>GitHub URL</label><input id="ed_github"></div>
+          <div class="edit-field"><label>Portfolio URL</label><input id="ed_portfolio"></div>
+        </div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Summary</div>
+        <div class="edit-grid full">
+          <div class="edit-field"><textarea id="ed_summary" rows="4"></textarea></div>
+        </div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Skills <span style="font-weight:400;font-size:11px;color:var(--muted)">(click × to remove)</span></div>
+        <div class="skill-tags" id="ed_skills"></div>
+        <div class="add-skill-row">
+          <input id="ed_newSkill" placeholder="Add a skill…">
+          <button type="button" id="ed_addSkillBtn">Add</button>
+        </div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Experience <button type="button" id="ed_addExp">+ Add</button></div>
+        <div id="ed_experiences"></div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Projects <button type="button" id="ed_addProj">+ Add</button></div>
+        <div id="ed_projects"></div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Education <button type="button" id="ed_addEdu">+ Add</button></div>
+        <div id="ed_education"></div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Certificates <button type="button" id="ed_addCert">+ Add</button></div>
+        <div id="ed_certificates"></div>
+      </div>
+
+      <div class="edit-actions">
+        <button type="button" id="ed_cancel" style="padding:9px 22px;border-radius:8px;background:none;border:1px solid var(--border);color:var(--text)">Cancel</button>
+        <button type="button" class="primary" id="ed_save" style="padding:12px 30px">Save resume ✓</button>
+      </div>
+      <div class="err" id="ed_err"></div>
+    </div>
+  </div>
+
+  <div id="resumeNav" style="display:flex;justify-content:space-between;margin-top:15px">
+    <button id="back3" style="padding:9px 22px;border-radius:8px;background:none;border:1px solid var(--border);color:var(--text)">← Back</button>
+    <div class="btn-wrap is-disabled" id="finishWrap">
+      <button class="primary" id="finish" style="padding:12px 30px" disabled>Finish ✓</button>
+      <div class="btn-overlay" data-hint="Parse & save a default resume to finish" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
+
+<script src="onboarding.js" type="module"></script>
+</body>
+</html>
