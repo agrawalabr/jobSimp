@@ -8,7 +8,7 @@
 // clips 100vw / fixed chrome (its right edge lands under the panel). This is what
 // overrode 100vw and reflowed LinkedIn. Nothing sets width on <body> — that was the
 // regression. There is exactly one push path here.
-import { isJobUrl } from '../../static/jobUrl.js';
+import { decideView } from '../../static/jobUrl.js';
 
 const PUSH_MIN_VW = 640;
 const PANEL_WIDTH = 340; // must match `.panel { width }` in panel.html
@@ -24,6 +24,10 @@ export async function startWidget() {
   if (window.top !== window) return;
   if (!chrome.runtime?.id) return;
   if (window.__jobsimpWidget === chrome.runtime.id) return;
+  // Only build where there's something to show (posting → panel, job page → badge).
+  // On 'none' we load nothing; the SW re-injects on navigation to a job URL. (Guard is
+  // set AFTER this check so a later job navigation can still build.)
+  if (decideView(location.href) === 'none') return;
   window.__jobsimpWidget = chrome.runtime.id;
 
   const [badgeHtml, panelHtml] = await Promise.all([
@@ -67,6 +71,7 @@ export async function startWidget() {
   let waitTimer = null;
   let dead = false;
   let dismissedUrl = null; // user closed the panel on this URL → don't auto-reopen
+  let view = 'none';       // decideView(url): 'panel' | 'badge' | 'none'
   let pushListening = false;
 
   const stopDiscoveryTimer = () => { clearTimeout(waitTimer); waitTimer = null; };
@@ -163,20 +168,20 @@ export async function startWidget() {
     el('badge').style.display = 'none';
   }
 
-  // ---- badge (reopen button; only when panel closed on a job page) ----
+  // ---- badge: the reopen affordance. Shown on any job page whenever the panel is
+  // closed (so job-listing pages get just the badge; postings get the panel). ----
   function updateBadge() {
     const badge = el('badge');
     const scoreEl = el('score');
-    if (!currentJD || panelOpen() || !isJobUrl()) { badge.style.display = 'none'; return; }
+    if (view === 'none' || panelOpen()) { badge.style.display = 'none'; return; }
     badge.style.display = 'flex';
     const cached = analysisCache.get(cacheKey());
     const score = cached?.match ? Number(cached.match.score) : NaN;
-    scoreEl.style.display = 'flex';
     if (Number.isFinite(score)) {
+      scoreEl.style.display = 'flex';
       scoreEl.textContent = String(Math.round(score));
       scoreEl.style.background = score >= 70 ? '#34c07a' : score >= 40 ? '#e8b13f' : '#e5604c';
     } else {
-      scoreEl.textContent = '';
       scoreEl.style.display = 'none';
     }
   }
@@ -364,14 +369,25 @@ export async function startWidget() {
     tick();
   }
 
-  // Dock the panel on a job URL; auto-open unless the user dismissed it here.
-  function showForUrl() {
-    if (dismissedUrl === pageUrl()) { updateBadge(); discoverUrl(pageUrl()); return; }
-    openPanel();
-    el('noJd').style.display = 'block';
-    if (!currentJD) el('noJd').textContent = 'Scanning this page…';
-    bootstrap().then(() => { if (alive()) fillResumeSelect(); if (currentJD) onJdReady(currentJD); });
-    discoverUrl(pageUrl());
+  // The quick decision: posting → open the panel; job listing/search → badge only;
+  // non-job → unload. Background-scrapes either way so opening is instant.
+  function applyView() {
+    view = decideView(pageUrl());
+    if (view === 'none') { unloadPanel(); return; }
+    if (view === 'panel' && dismissedUrl !== pageUrl()) {
+      openPanel();
+      el('noJd').style.display = 'block';
+      if (!currentJD) el('noJd').textContent = 'Scanning this page…';
+      bootstrap().then(() => { if (alive()) fillResumeSelect(); if (currentJD) onJdReady(currentJD); });
+      discoverUrl(pageUrl());
+    } else {
+      // 'badge' view (or a dismissed posting): keep the panel closed, un-shrink the
+      // page, show the badge. Still scrape in the background so a badge-click is instant.
+      el('panel').classList.remove('open');
+      clearPush();
+      updateBadge();
+      discoverUrl(pageUrl());
+    }
   }
 
   function onUrlChange() {
@@ -382,13 +398,11 @@ export async function startWidget() {
     discoveryCache.delete(u);
     currentJD = null;
     dismissedUrl = null;
-    if (!isJobUrl(u)) { unloadPanel(); return; } // not a job page → unload + restore page
-    if (panelOpen()) {
-      el('noJd').style.display = 'block'; el('noJd').textContent = 'Scanning this page…';
-      el('jobCard').style.display = 'none';
-      el('analysisBox').style.display = 'none'; el('matchBox').style.display = 'none'; el('aiState').textContent = '';
-    }
-    showForUrl();
+    // reset stale content for the new URL
+    el('jobCard').style.display = 'none'; el('peopleBox').style.display = 'none';
+    el('matchBox').style.display = 'none'; el('analysisBox').style.display = 'none'; el('aiState').textContent = '';
+    el('noJd').style.display = 'block'; el('noJd').textContent = 'Scanning this page…';
+    applyView();
   }
 
   // ---- badge: vertical drag + click reopens the panel ----
@@ -408,7 +422,10 @@ export async function startWidget() {
     badge.addEventListener('click', () => {
       if (moved) { moved = false; return; }
       openPanel();
-      bootstrap().then(() => { if (alive()) fillResumeSelect(); onJdReady(currentJD); });
+      el('noJd').style.display = 'block';
+      if (!currentJD) el('noJd').textContent = 'Scanning this page…';
+      bootstrap().then(() => { if (alive()) fillResumeSelect(); });
+      discoverUrl(pageUrl()); // renders/analyzes when the JD is ready (panel is now open)
     });
   })();
 
@@ -452,6 +469,7 @@ export async function startWidget() {
   window.addEventListener('popstate', onUrlChange);
   setInterval(() => { if (!dead && alive() && pageUrl() !== lastUrl) onUrlChange(); }, 500);
 
-  // document_start: on a job URL, dock immediately (panel + reflow before paint), then scrape.
-  if (isJobUrl(pageUrl())) showForUrl();
+  // We only build on job URLs (gated above). Decide per-URL: posting → open panel,
+  // job listing/search → badge only.
+  applyView();
 }
