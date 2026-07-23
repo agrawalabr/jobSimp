@@ -1,6 +1,11 @@
 // Resource: profile (singleton).
+// STATIC imports only — a module service worker forbids dynamic import().
+// Cross-DAO cycles are safe: bindings are used only inside methods.
 import { TYPES, SINGLETONS, emptyProfile, pickFields } from './dbModel.js';
 import { ensureSingleton, putEntity, setMeta } from './idb.js';
+import { metrics } from './metrics.js';
+import { resume } from './resume.js';
+import { user } from './user.js';
 
 export class Profile {
   async get() {
@@ -45,9 +50,6 @@ export class Profile {
 
   /** Legacy autofill bag (profile + metrics + active resume). */
   async view() {
-    const { metrics } = await import('./metrics.js');
-    const { resume } = await import('./resume.js');
-    const { user } = await import('./user.js');
     const p = await this.get();
     const m = await metrics.get();
     const active = await resume.active();
@@ -76,8 +78,6 @@ export class Profile {
 
   /** Legacy profile.set(key, value). */
   async setKey(key, value) {
-    const { metrics } = await import('./metrics.js');
-    const { resume } = await import('./resume.js');
     if (key === 'keywords') return true;
     if (key === 'basics') {
       const b = value || {};

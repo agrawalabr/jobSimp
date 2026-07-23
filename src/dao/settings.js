@@ -1,7 +1,13 @@
 // Resource: settings (singleton) + legacy defaults view.
+// NOTE: use STATIC imports, not dynamic import() — a module service worker
+// forbids import() (throws on ServiceWorkerGlobalScope). Cross-DAO cycles are
+// fine because these bindings are only used inside methods, not at module eval.
 import { TYPES, SINGLETONS, emptySettings, emptySecrets, pickFields } from './dbModel.js';
 import { defaultModelFor } from '../static/models.js';
 import { getEntity, putEntity } from './idb.js';
+import { secrets } from './secrets.js';
+import { user } from './user.js';
+import { resume } from './resume.js';
 
 export class Settings {
   async get() {
@@ -42,8 +48,6 @@ export class Settings {
 
   /** Legacy ExtStorage-shaped aggregate. */
   async getView() {
-    const { secrets } = await import('./secrets.js');
-    const { user } = await import('./user.js');
     const [s, sec, u] = await Promise.all([this.get(), secrets.get(), user.get()]);
     return {
       user: {
@@ -71,10 +75,6 @@ export class Settings {
 
   /** Patch via legacy defaults shape. */
   async putView(patch = {}) {
-    const { secrets } = await import('./secrets.js');
-    const { user } = await import('./user.js');
-    const { resume } = await import('./resume.js');
-
     if (patch.llm) {
       const llmPatch = {};
       if (patch.llm.provider != null) llmPatch.provider = patch.llm.provider;

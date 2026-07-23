@@ -49,7 +49,10 @@ document.getElementById('trackPage').onclick = async () => {
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => ({
-        role: document.querySelector('h1')?.textContent?.trim().slice(0, 140) || document.title.slice(0, 140),
+        role: (() => {
+          const raw = document.querySelector('h1')?.textContent?.trim().slice(0, 140) || document.title.slice(0, 140);
+          return raw.includes('|') ? raw.split('|')[0].trim() : raw;
+        })(),
         url: location.href.split('?')[0],
         source: location.hostname.replace('www.', ''),
         jdText: document.body.innerText.slice(0, 12000),

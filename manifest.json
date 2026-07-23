@@ -3,7 +3,7 @@
   "name": "JobSimp — Job Application Copilot",
   "version": "0.1.0",
   "description": "Google-login job copilot: track applications, AI-parsed multi-resume autofill, JD match scoring, AI outreach emails via Gmail.",
-  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs"],
+  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation"],
   "host_permissions": [
     "https://*.googleapis.com/*",
     "https://accounts.google.com/*",
@@ -183,7 +183,7 @@
         "src/component/widget/*",
         "src/service/scraper.js",
         "src/service/autofill.js",
-        "src/service/match.js"
+        "src/static/jobUrl.js"
       ],
       "matches": ["<all_urls>"]
     }

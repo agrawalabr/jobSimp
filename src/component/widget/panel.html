@@ -1,15 +1,15 @@
 <style>
 *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-.panel{position:fixed;top:0;right:0;height:100vh;width:300px;max-width:94vw;background:#141a28;color:#e8ecf4;
+.panel{position:fixed;top:0;right:0;height:100vh;width:340px;max-width:94vw;background:#141a28;color:#e8ecf4;
   border-left:1px solid #2a3348;box-shadow:-8px 0 32px rgba(0,0,0,.5);transform:translateX(100%);
-  transition:transform .22s ease;display:flex;flex-direction:column;pointer-events:auto;font-size:13px;z-index:2}
+  transition:transform .2s ease;display:flex;flex-direction:column;pointer-events:auto;font-size:13px;z-index:2}
 .panel.open{transform:none}
 .hd{display:flex;align-items:center;gap:10px;padding:14px 16px;background:#0f1420;border-bottom:1px solid #2a3348;flex:0 0 auto}
 .hd img{width:30px;height:30px;border-radius:50%;display:none}
 .hd .brand{font-weight:800;font-size:15px}
 .hd .dot{color:#34c07a;font-size:10px}
 .hd .who{font-size:11px;color:#8b95ab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.x{margin-left:auto;background:none;border:none;color:#8b95ab;font-size:20px;cursor:pointer;line-height:1;padding:2px 6px}
+.x{width:auto;margin-left:auto;background:none;border:none;color:#8b95ab;font-size:20px;cursor:pointer;line-height:1;padding:2px 6px}
 .x:hover{color:#fff}
 .bd{padding:14px 16px;overflow-y:auto;flex:1 1 auto}
 .sect{margin-bottom:16px}
@@ -21,6 +21,12 @@
 .mv{font-size:12px;margin-top:1px;word-break:break-word}
 .src{margin-top:8px;font-size:11px}
 .src a{color:#4f8ef7;text-decoration:none}
+.person{display:flex;flex-direction:column;gap:1px;padding:7px 0;border-bottom:1px solid #1c2434}
+.person:last-child{border-bottom:none}
+.person .pn{font-size:12px;font-weight:600}
+.person .pt{font-size:11px;color:#8b95ab}
+.person .plinks{display:flex;flex-wrap:wrap;gap:10px;margin-top:3px}
+.person a{color:#4f8ef7;text-decoration:none;font-size:11px}
 .lbl{font-size:10px;color:#8b95ab;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 4px}
 select,button{width:100%;background:#0f1420;border:1px solid #2a3348;color:#e8ecf4;border-radius:8px;padding:9px 12px;font-size:13px;cursor:pointer}
 button{margin-top:8px}
@@ -30,7 +36,7 @@ button:disabled{opacity:.55;cursor:default}
 .scoreRow b{font-size:24px}
 .scorebar{height:8px;border-radius:4px;background:#2a3348;margin:6px 0 4px;overflow:hidden}
 .scorebar>div{height:100%;border-radius:4px;width:0;transition:width .3s}
-.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-height:96px;overflow:auto}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-height:110px;overflow:auto}
 .chip{font-size:10px;padding:2px 8px;border-radius:10px;background:#1f4a2c;color:#6fe89a}
 .chip.miss{background:#4a1f24;color:#f08585}
 ul.clean{list-style:none;margin:4px 0 0;padding:0}
@@ -43,6 +49,9 @@ ul.clean li.muted{color:#8b95ab;border:none}
 .msg{font-size:12px;color:#e8b13f;min-height:14px;white-space:pre-wrap;margin-top:8px}
 .muted{color:#8b95ab}
 .ai_state{font-size:11px;color:#8b95ab;margin-top:4px;min-height:12px}
+.skel{background:linear-gradient(90deg,#1a2233 25%,#243049 37%,#1a2233 63%);background-size:400% 100%;
+  animation:sk 1.2s ease infinite;border-radius:6px;height:12px;margin:8px 0}
+@keyframes sk{0%{background-position:100% 0}100%{background-position:-100% 0}}
 </style>
 <div class="panel" id="panel">
   <div class="hd">
@@ -65,7 +74,13 @@ ul.clean li.muted{color:#8b95ab;border:none}
         <div class="meta" id="jd_meta"></div>
         <div class="src" id="jd_src"></div>
       </div>
-      <div id="noJd" class="muted" style="margin:4px 0">No job description detected on this page.</div>
+
+      <div class="sect" id="peopleBox" style="display:none">
+        <div class="lbl">People you can reach out to</div>
+        <div id="people"></div>
+      </div>
+
+      <div id="noJd" class="muted" style="margin:4px 0">Scanning this page…</div>
 
       <div class="lbl">Resume</div>
       <select id="resumeSel"></select>
@@ -78,8 +93,10 @@ ul.clean li.muted{color:#8b95ab;border:none}
         <div class="lbl">Required by JD · missing from resume</div><div class="chips" id="missingChips"></div>
       </div>
 
-      <button class="primary" id="analyzeBtn" type="button">Analyze fit with AI</button>
       <div class="ai_state" id="aiState"></div>
+      <div id="skeleton" style="display:none">
+        <div class="skel" style="width:80%"></div><div class="skel" style="width:95%"></div><div class="skel" style="width:70%"></div>
+      </div>
 
       <div id="analysisBox" style="display:none">
         <div class="lbl">Summary</div>
@@ -89,6 +106,7 @@ ul.clean li.muted{color:#8b95ab;border:none}
         <div class="lbl">Suggested resume additions</div><ul class="clean" id="an_add"></ul>
       </div>
 
+      <button class="primary" id="analyzeBtn" type="button" style="display:none">Re-analyze with AI</button>
       <div style="margin-top:14px">
         <button id="trackBtn" type="button">Track this job</button>
         <button id="autofillBtn" type="button">Autofill with selected resume</button>

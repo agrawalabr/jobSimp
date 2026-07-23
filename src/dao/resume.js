@@ -1,4 +1,6 @@
 // Resource: resume (many) + active pointer.
+// STATIC imports only — a module service worker forbids dynamic import(). The
+// cross-DAO cycles below are safe: bindings are used only inside methods.
 import {
   TYPES, SINGLETONS, META_KEYS, newResumeId, emptyResume, pickFields,
 } from './dbModel.js';
@@ -6,6 +8,11 @@ import {
   activeResumeId, graphMem, setActiveResumeId,
   getEntity, putEntity, deleteEntity, listByType, getMeta, setMeta,
 } from './idb.js';
+import { graph } from './graph.js';
+import { settings } from './settings.js';
+import { profile } from './profile.js';
+import { metrics } from './metrics.js';
+import { secrets } from './secrets.js';
 
 export class Resume {
   /** List all, or get one by id. */
@@ -49,8 +56,6 @@ export class Resume {
   async delete(id) {
     const r = await getEntity(id);
     if (!r) return false;
-    const { graph } = await import('./graph.js');
-    const { settings } = await import('./settings.js');
     await deleteEntity(id);
     await graph.delete(id);
     if (activeResumeId === id) {
@@ -98,8 +103,6 @@ export class Resume {
   }
 
   async select(ref) {
-    const { graph } = await import('./graph.js');
-    const { settings } = await import('./settings.js');
     const r = (ref != null && ref !== '')
       ? await this.resolve(ref)
       : await this.active(null);
@@ -118,8 +121,6 @@ export class Resume {
 
   /** Save LLM parse, rebuild graph, seed profile, select. */
   async saveParsed(id, parsed, parsedAt = Date.now()) {
-    const { graph } = await import('./graph.js');
-    const { profile } = await import('./profile.js');
     const r = await getEntity(id);
     if (!r) throw new Error('Resume not found');
     const saved = await this.put({ id, parsed, parsedAt });
@@ -137,11 +138,6 @@ export class Resume {
 
   /** Boot: ensure singletons + restore active pointer. */
   async warm() {
-    const { profile } = await import('./profile.js');
-    const { metrics } = await import('./metrics.js');
-    const { settings } = await import('./settings.js');
-    const { secrets } = await import('./secrets.js');
-    const { graph } = await import('./graph.js');
     await profile.get();
     await metrics.get();
     await settings.get();

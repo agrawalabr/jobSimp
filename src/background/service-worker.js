@@ -7,9 +7,9 @@ import { parseResume } from '../service/resume.js';
 import { sendEmail, parseRecipients } from '../service/gmail.js';
 import { getSettings, saveSettings } from '../service/settings.js';
 import { signIn, getUser, signOut } from '../service/oauth.js';
-import { scoreJdAgainstResume, looksLikeJD } from '../service/match.js';
 import { requestLLM, extractJson } from '../service/llm.js';
 import { JD_ANALYSIS_PROMPT } from '../static/prompts.js';
+import { isJobUrl } from '../static/jobUrl.js';
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   chrome.alarms.clear('jobsimp-poll');
@@ -23,6 +23,22 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 chrome.alarms.clear('jobsimp-poll');
 chrome.alarms.clear('jobsimp-sync');
 resume.warm().catch((e) => console.warn('dao warm failed', e.message));
+
+// ---------- inject the widget on SPA navigations ----------
+// Content scripts only auto-run on a full document load. Single-page apps
+// (LinkedIn, Workday, Greenhouse embeds…) change the URL via history.pushState
+// with no reload, so Chrome never (re)injects — the badge would only appear
+// after a manual refresh. Re-inject on history/hash navigations to matching URLs.
+// The content script guards itself against double-injection, so this is a no-op
+// when it's already running on the tab.
+if (chrome.webNavigation) {
+  const onSpaNav = (d) => {
+    if (d.frameId !== 0 || !isJobUrl(d.url)) return;
+    chrome.scripting.executeScript({ target: { tabId: d.tabId }, files: ['src/content/bootstrap.js'] }).catch(() => {});
+  };
+  chrome.webNavigation.onHistoryStateUpdated.addListener(onSpaNav);
+  chrome.webNavigation.onReferenceFragmentUpdated.addListener(onSpaNav);
+}
 
 function removedStorage(name) {
   throw new Error(`${name} removed. Use src/dao/ (IndexedDB jobsimp-graph).`);
@@ -96,8 +112,6 @@ const handlers = {
     return parsed;
   },
 
-  'jd.check': (p) => looksLikeJD(p.text),
-
   'entity.put': () => removedStorage('entity.*'),
   'entity.get': () => removedStorage('entity.*'),
   'entity.query': () => removedStorage('entity.*'),
@@ -113,15 +127,8 @@ const handlers = {
     if (sender?.tab?.id) chrome.tabs.sendMessage(sender.tab.id, { type: '__autofill_result', payload: p }).catch(() => {});
     return true;
   },
-  'match.score': async (p) => {
-    if (p.resumeId) await resume.select(p.resumeId).catch(() => {});
-    const r = await resume.active(p.resumeId || resume.activeId());
-    if (!r?.parsed?.skills?.length) return null;
-    if (p.generic && !looksLikeJD(p.jdText)) return null;
-    return scoreJdAgainstResume(p.jdText, r.parsed.skills);
-  },
-  'autofill.here': async (_p, sender) => {
-    const tabId = sender?.tab?.id;
+  'autofill.here': async (p, sender) => {
+    const tabId = sender?.tab?.id ?? p?.tabId; // panel has no sender.tab → pass tabId explicitly
     if (!tabId) throw new Error('No tab context');
     await chrome.scripting.executeScript({ target: { tabId }, files: ['src/content/autofill.js'] });
     return true;
