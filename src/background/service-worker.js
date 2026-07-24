@@ -10,7 +10,7 @@ import { signIn, getUser, signOut } from '../service/oauth.js';
 import { requestLLM, extractJson } from '../service/llm.js';
 import { getJdAnalysis, putJdAnalysis } from '../service/jdCache.js';
 import { JD_ANALYSIS_PROMPT } from '../static/prompts.js';
-import { isJobUrl, jobCacheKey, extractJobId } from '../static/jobUrl.js';
+import { isJobUrl, jobCacheKey, extractJobId, JD_TEXT_LIMIT } from '../static/jobUrl.js';
 
 chrome.runtime?.onInstalled?.addListener(async (details) => {
   chrome.alarms.clear('jobsimp-poll');
@@ -157,7 +157,7 @@ const handlers = {
     });
 
     const meta = `URL: ${p.url || ''}\nJobId: ${jobId || '—'}\nSource: ${p.source || ''}\nAlready-detected fields: ${JSON.stringify(p.job || {})}`;
-    const prompt = `${JD_ANALYSIS_PROMPT}\n\n=== JOB PAGE METADATA ===\n${meta}\n\n=== JOB DESCRIPTION ===\n${String(p.jdText || '').slice(0, 12000)}\n\n=== CANDIDATE RESUME (JSON) ===\n${resumeLite}`;
+    const prompt = `${JD_ANALYSIS_PROMPT}\n\n=== JOB PAGE METADATA ===\n${meta}\n\n=== JOB DESCRIPTION ===\n${String(p.jdText || '').slice(0, JD_TEXT_LIMIT)}\n\n=== CANDIDATE RESUME (JSON) ===\n${resumeLite}`;
 
     const raw = await requestLLM({ provider, model, key, prompt, config: { temperature: 0, maxTokens: 1600 } });
     const out = extractJson(raw);

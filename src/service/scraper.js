@@ -4,7 +4,7 @@
 // text block, then hand it to the LLM (jd.analyze) which does ALL the meaningful
 // extraction (company, type, salary, location, sponsorship, e-verify) + matching.
 // We deliberately do NOT infer fields here — the LLM reads the raw JD far better.
-import { extractJobId, jobCacheKey } from '../static/jobUrl.js';
+import { extractJobId, jobCacheKey, JD_TEXT_LIMIT } from '../static/jobUrl.js';
 
 export { extractJobId, jobCacheKey };
 
@@ -37,7 +37,7 @@ export function installScraper() {
   }
 
   const MIN_JD_CHARS = 300;
-  const MAX_JD_CHARS = 12000;
+  const MAX_JD_CHARS = JD_TEXT_LIMIT;
 
   function looksLikeJD(text) {
     const t = String(text || '').toLowerCase();

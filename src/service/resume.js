@@ -259,7 +259,7 @@ export async function parseResume(doc, model, key, provider) {
 
   // Build prompt
   const annotBlock = annotations.length? `\n\n--- DOCUMENT ANNOTATIONS (embedded hyperlinks) ---\n${annotations.join('\n')}` : '';
-  const isPdf = fileB64 && mime === 'application/pdf';
+  const isPdf = fileB64 && mime === 'application/pdf' && provider !== 'openai';
   const parts = isPdf? [{ inlineData: { mimeType: 'application/pdf', data: fileB64 } }, { text: RESUME_PARSE_PROMPT + annotBlock }] : null;
   const prompt = isPdf? null : `${RESUME_PARSE_PROMPT}\n\n--- RESUME TEXT ---\n${text.slice(0, TEXT_LIMIT)}${annotBlock}`;
   

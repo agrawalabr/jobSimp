@@ -198,7 +198,7 @@ export const FIELDS = Object.freeze({
   [TYPES.JOB]: [
     'date', 'company', 'role', 'type', 'status', 'sponsorship', 'everify',
     'followup', 'referral', 'url', 'location', 'salary', 'datePosted', 'source',
-    'notes', 'jdText', 'createdAt', 'updatedAt',
+    'notes', 'jdText', 'externalJobId', 'createdAt', 'updatedAt',
   ],
   [TYPES.ANSWER]: ['question', 'answer', 'patterns', 'type', 'useCount'],
   [TYPES.EMAIL]: [
