@@ -66,6 +66,7 @@
     "https://apply.deloitte.com/*",
 
     "https://*.linkedin.com/jobs/*",
+    "https://*.linkedin.com/jobs/view/*",
     "https://*.indeed.com/*",
     "https://*.glassdoor.com/*",
     "https://*.ziprecruiter.com/*",
@@ -143,6 +144,7 @@
         "https://*.jobs.personio.com/*",
 
         "https://*.linkedin.com/jobs/*",
+        "https://*.linkedin.com/jobs/view/*",
         "https://*.indeed.com/*",
         "https://*.glassdoor.com/*",
         "https://*.ziprecruiter.com/*",

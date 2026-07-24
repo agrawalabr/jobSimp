@@ -11,8 +11,14 @@
 import { decideView } from '../../static/jobUrl.js';
 
 const PUSH_MIN_VW = 640;
-const PANEL_WIDTH = 340; // must match `.panel { width }` in panel.html
+const PANEL_WIDE_MIN_VW = 1200; // ≥ this → 300px panel; anything smaller → 250px
+const PANEL_WIDTH_WIDE = 300;
+const PANEL_WIDTH_NARROW = 250;
 const url = (p) => chrome.runtime.getURL(p);
+
+function panelWidthForVw(vw = window.innerWidth) {
+  return vw >= PANEL_WIDE_MIN_VW ? PANEL_WIDTH_WIDE : PANEL_WIDTH_NARROW;
+}
 
 async function loadTemplate(path) {
   const res = await fetch(url(path));
@@ -123,9 +129,17 @@ export async function startWidget() {
     cappedEls.clear();
   }
 
+  function applyPanelWidth() {
+    const panel = el('panel');
+    if (!panel) return panelWidthForVw();
+    const w = panelWidthForVw();
+    panel.style.width = `${w}px`;
+    return w;
+  }
+
   function applyPush() {
+    const w = applyPanelWidth();
     if (window.innerWidth <= PUSH_MIN_VW) { clearPush(); return; } // narrow screens: overlay is fine
-    const w = el('panel')?.offsetWidth || PANEL_WIDTH;
     const h = document.documentElement.style;
     h.setProperty('margin-right', `${w}px`, 'important');
     h.setProperty('overflow-x', 'hidden', 'important');
@@ -144,15 +158,17 @@ export async function startWidget() {
     document.body?.style.removeProperty('min-width');
     uncapWide();
   }
-  const onResize = () => { if (panelOpen()) applyPush(); };
+  const onResize = () => { if (panelOpen()) applyPush(); else applyPanelWidth(); };
 
   function openPanel() {
     dismissedUrl = null;
     el('badge').style.display = 'none';
+    applyPanelWidth();
     el('panel').classList.add('open');
     requestAnimationFrame(applyPush);
     if (!pushListening) { window.addEventListener('resize', onResize); pushListening = true; }
   }
+  applyPanelWidth(); // initial width before first open
   function closePanel() {
     el('panel').classList.remove('open');
     clearPush();
