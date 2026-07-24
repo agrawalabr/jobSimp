@@ -8,10 +8,11 @@ import { sendEmail, parseRecipients } from '../service/gmail.js';
 import { getSettings, saveSettings } from '../service/settings.js';
 import { signIn, getUser, signOut } from '../service/oauth.js';
 import { requestLLM, extractJson } from '../service/llm.js';
+import { getJdAnalysis, putJdAnalysis } from '../service/jdCache.js';
 import { JD_ANALYSIS_PROMPT } from '../static/prompts.js';
-import { isJobUrl } from '../static/jobUrl.js';
+import { isJobUrl, jobCacheKey, extractJobId } from '../static/jobUrl.js';
 
-chrome.runtime.onInstalled.addListener(async (details) => {
+chrome.runtime?.onInstalled?.addListener(async (details) => {
   chrome.alarms.clear('jobsimp-poll');
   chrome.alarms.clear('jobsimp-sync');
   const s = await settings.get();
@@ -20,8 +21,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
-chrome.alarms.clear('jobsimp-poll');
-chrome.alarms.clear('jobsimp-sync');
+chrome.alarms?.clear?.('jobsimp-poll');
+chrome.alarms?.clear?.('jobsimp-sync');
 resume.warm().catch((e) => console.warn('dao warm failed', e.message));
 
 // ---------- inject the widget on SPA navigations ----------
@@ -31,13 +32,13 @@ resume.warm().catch((e) => console.warn('dao warm failed', e.message));
 // after a manual refresh. Re-inject on history/hash navigations to matching URLs.
 // The content script guards itself against double-injection, so this is a no-op
 // when it's already running on the tab.
-if (chrome.webNavigation) {
+if (chrome.webNavigation?.onHistoryStateUpdated) {
   const onSpaNav = (d) => {
     if (d.frameId !== 0 || !isJobUrl(d.url)) return;
     chrome.scripting.executeScript({ target: { tabId: d.tabId }, files: ['src/content/bootstrap.js'] }).catch(() => {});
   };
   chrome.webNavigation.onHistoryStateUpdated.addListener(onSpaNav);
-  chrome.webNavigation.onReferenceFragmentUpdated.addListener(onSpaNav);
+  chrome.webNavigation.onReferenceFragmentUpdated?.addListener(onSpaNav);
 }
 
 function removedStorage(name) {
@@ -91,11 +92,7 @@ const handlers = {
   'resumes.save': (p) => resume.post(p),
   'resumes.saveParsed': (p) => resume.saveParsed(p.id, p.parsed, p.parsedAt || Date.now()),
   'resumes.delete': (p) => resume.delete(p.id),
-  'resumes.setDefault': async (p) => {
-    await resume.setDefault(p.id);
-    await resume.select(p.id);
-    return true;
-  },
+  'resumes.setDefault': (p) => resume.setDefault(p.id),
   'resumes.select': (p) => resume.select(p.id ?? p.ref),
   'resumes.active': () => resume.active(),
   'resumes.parse': async (p) => {
@@ -142,6 +139,15 @@ const handlers = {
     const r = await resume.active(p.resumeId || resume.activeId());
     if (!r?.parsed) throw new Error('Select a parsed resume first.');
 
+    const jobId = p.jobId || extractJobId(p.url || '') || '';
+    const jobKey = p.jobKey || jobCacheKey(p.url || '', jobId);
+    const resumeId = r.id;
+
+    if (!p.force) {
+      const cached = await getJdAnalysis(jobKey, resumeId);
+      if (cached) return { ...cached, cached: true, jobId, jobKey };
+    }
+
     const parsed = r.parsed;
     const resumeLite = JSON.stringify({
       skills: parsed.skills || [],
@@ -150,13 +156,15 @@ const handlers = {
       education: parsed.education || [],
     });
 
-    const meta = `URL: ${p.url || ''}\nSource: ${p.source || ''}\nAlready-detected fields: ${JSON.stringify(p.job || {})}`;
+    const meta = `URL: ${p.url || ''}\nJobId: ${jobId || '—'}\nSource: ${p.source || ''}\nAlready-detected fields: ${JSON.stringify(p.job || {})}`;
     const prompt = `${JD_ANALYSIS_PROMPT}\n\n=== JOB PAGE METADATA ===\n${meta}\n\n=== JOB DESCRIPTION ===\n${String(p.jdText || '').slice(0, 12000)}\n\n=== CANDIDATE RESUME (JSON) ===\n${resumeLite}`;
 
     const raw = await requestLLM({ provider, model, key, prompt, config: { temperature: 0, maxTokens: 1600 } });
     const out = extractJson(raw);
     if (!out) throw new Error('Model did not return parseable JSON.');
-    return out;
+    const payload = { ...out, cached: false, jobId, jobKey };
+    await putJdAnalysis(jobKey, resumeId, { job: out.job, match: out.match, analysis: out.analysis });
+    return payload;
   },
 
   'ai.draft': async (p) => {

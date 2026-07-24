@@ -30,6 +30,7 @@ export class Job {
       source: job.source ?? existing?.source ?? '',
       notes: job.notes ?? existing?.notes ?? '',
       jdText: job.jdText ?? existing?.jdText ?? '',
+      externalJobId: job.externalJobId || job.jobId || existing?.externalJobId || '',
       createdAt: job.createdAt || existing?.createdAt || now,
       updatedAt: now,
     });

@@ -10,14 +10,12 @@ let editSkills = [];
 let activeResumeId = null;
 
 function renderResumeCard(r) {
-  const isActive = r.id === activeResumeId;
   const skills = r.parsed?.skills || [];
   return `
     <div class="rz">
       <div class="rz-main">
         <div class="rz-title">${esc(r.name)}
           ${r.isDefault ? '<span class="badge ok">default</span>' : ''}
-          ${isActive ? '<span class="badge">active</span>' : ''}
         </div>
         <div class="rz-meta">${r.parsed
     ? `parsed · ${skills.length} skills · ${(r.parsed.experiences || []).length} roles`
@@ -30,7 +28,6 @@ function renderResumeCard(r) {
         ${r.parsed
     ? `<button class="small" data-edit="${r.id}">Edit</button><button class="small" data-parse="${r.id}">Re-parse</button>`
     : `<button class="small" data-parse="${r.id}">Parse</button>`}
-        ${!isActive ? `<button class="small" data-select="${r.id}">Use in widget</button>` : ''}
         ${!r.isDefault ? `<button class="small" data-default="${r.id}">Set default</button>` : ''}
         <button class="small" data-del="${r.id}">Delete</button>
       </div>
@@ -38,9 +35,9 @@ function renderResumeCard(r) {
 }
 
 async function refreshResumes() {
-  const [listRes, activeRes] = await Promise.all([send('resumes.list'), send('resumes.active')]);
+  const listRes = await send('resumes.list');
   const list = listRes?.data || [];
-  activeResumeId = activeRes?.data?.id || null;
+  activeResumeId = list.find((r) => r.isDefault)?.id || list[0]?.id || null;
   $('resumeListLabel').textContent = list.length ? `Your resumes (${list.length})` : 'Your resumes';
   $('resumeList').innerHTML = list.length
     ? list.map(renderResumeCard).join('')
@@ -228,7 +225,6 @@ export function initResumePanel() {
       return;
     }
 
-    if (b.dataset.select) await send('resumes.select', { id: b.dataset.select });
     if (b.dataset.default) await send('resumes.setDefault', { id: b.dataset.default });
     if (b.dataset.del && confirm('Delete this resume?')) {
       await send('resumes.delete', { id: b.dataset.del });

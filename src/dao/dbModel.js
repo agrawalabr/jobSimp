@@ -157,6 +157,7 @@ export function emptyJob(partial = {}) {
     source: '',
     notes: '',
     jdText: '',
+    externalJobId: '',
     createdAt: Date.now(),
     updatedAt: Date.now(),
     ...partial,

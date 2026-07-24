@@ -2,6 +2,7 @@
 import { buildRfc2822, toBase64Url, parseRecipients } from '../src/service/gmail.js';
 import { modelsFor, defaultModelFor, optionLabel, CONSUMPTION } from '../src/static/models.js';
 import { RESUME_PARSE_PROMPT, RESUME_PARSE_SCHEMA } from '../src/static/prompts.js';
+import { extractJobId, jobCacheKey } from '../src/static/jobUrl.js';
 
 let pass = 0, fail = 0;
 function t(name, fn) {
@@ -60,6 +61,26 @@ t('defaults exist in each provider list', () => {
 t('optionLabel includes consumption', () => {
   const m = modelsFor('gemini')[0];
   ok(optionLabel(m).includes(m.consumption));
+});
+
+console.log('\njobUrl.js');
+t('extractJobId LinkedIn /jobs/view/{id}', () => {
+  eq(extractJobId('https://www.linkedin.com/jobs/view/4440054893/?foo=1'), '4440054893');
+});
+t('extractJobId LinkedIn currentJobId query', () => {
+  eq(extractJobId('https://www.linkedin.com/jobs/search-results/?currentJobId=4365107588&keywords=x'), '4365107588');
+});
+t('extractJobId Indeed jk=', () => {
+  eq(extractJobId('https://www.indeed.com/viewjob?jk=abc123def&from=serp'), 'abc123def');
+});
+t('extractJobId Greenhouse numeric path', () => {
+  eq(extractJobId('https://boards.greenhouse.io/acme/jobs/4012345'), '4012345');
+});
+t('extractJobId Lever uuid', () => {
+  eq(extractJobId('https://jobs.lever.co/acme/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'), 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+});
+t('jobCacheKey prefers host:jobId', () => {
+  eq(jobCacheKey('https://www.linkedin.com/jobs/view/111/?utm_source=x', '111'), 'linkedin.com:111');
 });
 
 console.log('\nprompts.js');

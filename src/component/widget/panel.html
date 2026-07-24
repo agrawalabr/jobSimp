@@ -14,25 +14,47 @@
 .x:hover{color:#fff}
 .bd{padding:14px 16px;overflow-y:auto;flex:1 1 auto}
 .sect{margin-bottom:16px}
-.role{font-size:16px;font-weight:700;line-height:1.25}
-.company{color:#a9b4cc;margin-top:2px}
-.meta{margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
-.mrow{display:flex;flex-direction:column;background:#0f1420;border:1px solid #23304a;border-radius:8px;padding:6px 8px}
-.mk{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#8b95ab}
-.mv{font-size:12px;margin-top:1px;word-break:break-word}
-.src{margin-top:8px;font-size:11px}
-.src a{color:#4f8ef7;text-decoration:none}
-.person{display:flex;flex-direction:column;gap:1px;padding:7px 0;border-bottom:1px solid #1c2434}
-.person:last-child{border-bottom:none}
-.person .pn{font-size:12px;font-weight:600}
-.person .pt{font-size:11px;color:#8b95ab}
-.person .plinks{display:flex;flex-wrap:wrap;gap:10px;margin-top:3px}
-.person a{color:#4f8ef7;text-decoration:none;font-size:11px}
+.role-row{display:flex;align-items:flex-start;flex-wrap:wrap;gap:6px 8px;margin:2px 0 2px}
+.role{font-size:15px;font-weight:700;line-height:1.3;min-width:0;flex:1 1 auto}
+.role a{color:#e8ecf4;text-decoration:none;display:inline;border-bottom:1px solid transparent}
+.role a:hover{color:#4f8ef7;border-bottom-color:#4f8ef7}
+.role .ext{display:inline-block;width:12px;height:12px;margin-left:5px;vertical-align:-1px;opacity:.75;flex-shrink:0}
+.role a:hover .ext{opacity:1;color:#4f8ef7}
+.badge-sponsor{flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:.2px;padding:2px 8px;border-radius:6px;
+  line-height:1.4;margin-top:2px;border:1px solid transparent}
+.badge-sponsor.ok{background:#14261c;color:#6fe89a;border-color:#1f4a2c}
+.badge-sponsor.bad{background:#2a1418;color:#f08585;border-color:#4a1f24}
+.badge-sponsor.maybe{background:#2a2210;color:#e8b13f;border-color:#4a3a1f}
+.company{color:#a9b4cc;margin-top:2px;font-size:12px}
+.company a{color:#a9b4cc;text-decoration:none;border-bottom:1px solid transparent}
+.company a:hover{color:#4f8ef7;border-bottom-color:#4f8ef7}
+.meta{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start}
+.mrow{display:inline-flex;align-items:baseline;gap:5px;background:#0f1420;border:1px solid #23304a;border-radius:6px;
+  padding:3px 7px;flex:0 1 auto;max-width:100%;line-height:1.25}
+.mrow.wide{flex:1 1 100%;display:flex}
+.mk{font-size:8px;text-transform:uppercase;letter-spacing:.4px;color:#8b95ab;white-space:nowrap}
+.mk:after{content:':'}
+.mv{font-size:11px;word-break:break-word;font-weight:600}
+ul.people{list-style:none;margin:0;padding:0}
+ul.people li{padding:1px 0;font-size:12px;font-weight:600;line-height:1.3;color:#e8ecf4}
+ul.people a{color:inherit;text-decoration:none}
+ul.people a:hover{color:#4f8ef7}
+ul.people .ptitle{display:block;font-size:10px;font-weight:400;color:#8b95ab;line-height:1.25;margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lbl{font-size:10px;color:#8b95ab;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 4px}
-select,button{width:100%;background:#0f1420;border:1px solid #2a3348;color:#e8ecf4;border-radius:8px;padding:9px 12px;font-size:13px;cursor:pointer}
+select,button{width:100%;height:30px;background:#0f1420;border:1px solid #2a3348;color:#e8ecf4;border-radius:8px;padding:6px 12px;font-size:10px;cursor:pointer}
 button{margin-top:8px}
 button.primary{background:#4f8ef7;border-color:#4f8ef7;font-weight:600}
 button:disabled{opacity:.55;cursor:default}
+.resume-row{display:flex;align-items:center;gap:6px;margin-top:2px}
+.resume-row select{flex:1;min-width:0;margin:0}
+.icon-btn{flex:0 0 auto;width:30px;height:30px;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:8px;background:#0f1420;border:1px solid #2a3348;color:#a9b4cc}
+.icon-btn:hover{border-color:#4f8ef7;color:#e8ecf4}
+.icon-btn svg{width:16px;height:16px;display:block}
+.apply-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.apply-row button{margin:0;padding:6px 8px;font-size:11px;font-weight:600}
+.apply-row button.primary{background:#4f8ef7;border-color:#4f8ef7}
 .scoreRow{display:flex;justify-content:space-between;align-items:baseline}
 .scoreRow b{font-size:24px}
 .scorebar{height:8px;border-radius:4px;background:#2a3348;margin:6px 0 4px;overflow:hidden}
@@ -47,9 +69,14 @@ ul.clean li.gap:before{content:'!';color:#e8b13f}
 ul.clean li.add:before{content:'+';color:#34c07a}
 ul.clean li.muted{color:#8b95ab;border:none}
 .an_summary{background:#0f1420;border:1px solid #23304a;border-radius:8px;padding:10px;font-size:12px;line-height:1.5}
-.msg{font-size:12px;color:#e8b13f;min-height:14px;white-space:pre-wrap;margin-top:8px}
+.status{font-size:12px;line-height:1;min-height:0;white-space:pre-wrap;margin-top:6px;padding:0;border-radius:8px;}
+.status:empty{display:none;margin:0;padding:0;border:none}
+.status.info{color:#8b95ab;background:#121826;border-color:#23304a;padding:6px 10px}
+.status.ok{color:#6fe89a;background:#14261c;border-color:#1f4a2c;padding:6px 10px}
+.status.warn{color:#e8b13f;background:#2a2210;border-color:#4a3a1f;padding:6px 10px}
+.status.err{color:#f08585;background:#2a1418;border-color:#4a1f24;padding:6px 10px}
+.status.busy{color:#7db4f0;background:#141c2c;border-color:#1e3a5f;padding:6px 10px}
 .muted{color:#8b95ab}
-.ai_state{font-size:11px;color:#8b95ab;margin-top:4px;min-height:12px}
 .skel{background:linear-gradient(90deg,#1a2233 25%,#243049 37%,#1a2233 63%);background-size:400% 100%;
   animation:sk 1.2s ease infinite;border-radius:6px;height:12px;margin:8px 0}
 @keyframes sk{0%{background-position:100% 0}100%{background-position:-100% 0}}
@@ -72,47 +99,62 @@ ul.clean li.muted{color:#8b95ab;border:none}
       <div class="sect" id="jobCard" style="display:none">
         <div class="role" id="jd_role">—</div>
         <div class="company" id="jd_company"></div>
+        <div class="company" id="jd_company"></div>
         <div class="meta" id="jd_meta"></div>
-        <div class="src" id="jd_src"></div>
+        <div class="role-row">
+          <span class="badge-sponsor" id="jd_sponsor" style="display:none"></span>
+        </div>
       </div>
 
       <div class="sect" id="peopleBox" style="display:none">
-        <div class="lbl">People you can reach out to</div>
-        <div id="people"></div>
+        <div class="lbl">Reach out</div>
+        <ul class="people" id="people"></ul>
       </div>
 
       <div id="noJd" class="muted" style="margin:4px 0">Scanning this page…</div>
 
       <div class="lbl">Resume</div>
-      <select id="resumeSel"></select>
+      <div class="resume-row">
+        <select id="resumeSel"></select>
+        <button class="icon-btn" id="analyzeBtn" type="button" title="Re-analyze with AI" aria-label="Re-analyze" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.6-6.3"/>
+            <polyline points="21 3 21 9 15 9"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="trackBtn" type="button" title="Save job" aria-label="Save">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+        </button>
+      </div>
+      <div class="apply-row">
+        <button id="autofillBtn" type="button">Apply</button>
+        <button class="primary" id="tailoredApplyBtn" type="button">✨ Tailor & Apply</button>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+
+      <div id="skeleton" style="display:none">
+        <div class="skel" style="width:80%"></div><div class="skel" style="width:95%"></div><div class="skel" style="width:70%"></div>
+      </div>
 
       <div id="matchBox" style="display:none">
         <div class="lbl">Resume ↔ JD match</div>
         <div class="scoreRow"><b id="scoreTxt">0%</b><span class="muted" id="matchCounts"></span></div>
         <div class="scorebar"><div id="scoreFill"></div></div>
-        <div class="lbl">JD requirements you have</div><div class="chips" id="matchedChips"></div>
-        <div class="lbl">Required by JD · missing from resume</div><div class="chips" id="missingChips"></div>
-      </div>
-
-      <div class="ai_state" id="aiState"></div>
-      <div id="skeleton" style="display:none">
-        <div class="skel" style="width:80%"></div><div class="skel" style="width:95%"></div><div class="skel" style="width:70%"></div>
+        <div class="lbl">Strong matches · </div><div class="chips" id="matchedChips"></div>
+        <div class="lbl">Required · </div><div class="chips" id="missingChips"></div>
       </div>
 
       <div id="analysisBox" style="display:none">
         <div class="lbl">Summary</div>
         <div class="an_summary" id="an_summary"></div>
-        <div class="lbl">Strengths</div><ul class="clean" id="an_strengths"></ul>
-        <div class="lbl">Gaps</div><ul class="clean" id="an_gaps"></ul>
-        <div class="lbl">Suggested resume additions</div><ul class="clean" id="an_add"></ul>
+        <div class="lbl">Must have (before applying)</div><ul class="clean" id="an_must"></ul>
+        <div class="lbl">Good to have</div><ul class="clean" id="an_good"></ul>
       </div>
 
-      <button class="primary" id="analyzeBtn" type="button" style="display:none">Re-analyze with AI</button>
-      <div style="margin-top:14px">
-        <button id="trackBtn" type="button">Track this job</button>
-        <button id="autofillBtn" type="button">Autofill with selected resume</button>
-      </div>
-      <div class="msg" id="msg"></div>
     </div>
   </div>
 </div>

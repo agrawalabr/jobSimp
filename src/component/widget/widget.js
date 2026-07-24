@@ -8,7 +8,7 @@
 // clips 100vw / fixed chrome (its right edge lands under the panel). This is what
 // overrode 100vw and reflowed LinkedIn. Nothing sets width on <body> — that was the
 // regression. There is exactly one push path here.
-import { decideView } from '../../static/jobUrl.js';
+import { decideView, extractJobId, jobCacheKey } from '../../static/jobUrl.js';
 
 const PUSH_MIN_VW = 640;
 const PANEL_WIDE_MIN_VW = 1200; // ≥ this → 300px panel; anything smaller → 250px
@@ -36,7 +36,7 @@ export async function startWidget() {
   if (decideView(location.href) === 'none') return;
   window.__jobsimpWidget = chrome.runtime.id;
 
-  const [badgeHtml, panelHtml] = await Promise.all([
+  const [badgeMarkup, panelMarkup] = await Promise.all([
     loadTemplate('src/component/widget/badge.html'),
     loadTemplate('src/component/widget/panel.html'),
   ]);
@@ -57,22 +57,53 @@ export async function startWidget() {
   const pageUrl = () => location.href;
   const scrapeJD = () => window.__jobsimpScraper?.scrape?.() ?? null;
 
+  /** Turn raw API/JSON errors into a short human summary. */
+  function summarizeError(raw) {
+    const s = String(raw ?? '').trim();
+    if (!s) return 'Something went wrong. Try again.';
+    // Prefer nested message/error fields from JSON blobs
+    try {
+      const j = JSON.parse(s.match(/\{[\s\S]*\}/)?.[0] || s);
+      const msg = j?.error?.message || j?.message || j?.error || j?.statusText;
+      if (msg && typeof msg === 'string') return clean(msg).slice(0, 220);
+    } catch { /* not JSON */ }
+    if (/quota|rate.?limit|429/i.test(s)) return 'AI quota or rate limit hit. Wait a bit, or switch model/provider in settings.';
+    if (/api key|unauthorized|401|403/i.test(s)) return 'AI key missing or invalid. Check your key in settings.';
+    if (/network|failed to fetch|ERR_/i.test(s)) return 'Network error. Check your connection and try again.';
+    if (/parseable JSON|Empty AI|did not return/i.test(s)) return 'AI returned an unreadable response. Tap re-analyze to retry.';
+    // Strip long JSON / HTML leftovers
+    const plain = s.replace(/[{}\[\]"]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return (plain.length > 180 ? `${plain.slice(0, 177)}…` : plain) || 'Something went wrong. Try again.';
+  }
+
+  /** Unified status line: kind = info | ok | warn | err | busy | '' (clear). */
+  function setStatus(text = '', kind = 'info') {
+    const node = el('status');
+    if (!node) return;
+    node.className = 'status';
+    if (!text) { node.textContent = ''; return; }
+    node.classList.add(kind || 'info');
+    node.textContent = text;
+  }
+
   const host = document.createElement('div');
   host.id = 'jobsimp-widget-host';
   Object.assign(host.style, { position: 'fixed', top: '0', right: '0', width: '0', height: '0', zIndex: 2147483647 });
   const root = host.attachShadow({ mode: 'closed' });
-  root.innerHTML = badgeHtml + panelHtml;
+  root.innerHTML = badgeMarkup + panelMarkup;
   const el = (id) => root.getElementById(id);
   (document.documentElement || document).appendChild(host); // document_start: <html> exists, <body> may not yet
 
   let currentJD = null;
   let resumes = [];
   let user = null;
+  let needsSponsorship = ''; // profile metrics — Yes / Unknown / No / free text
   let activeResumeId = null;
   let bootstrapped = false;
   let bootstrapPromise = null;
   const discoveryCache = new Map();
-  const analysisCache = new Map(); // `${url}::${resumeId}` → { job, match, analysis }
+  // Session memory: keyed by jobId (preferred), jobKey, and url — all point at same analysis blob.
+  const analysisCache = new Map();
   let lastUrl = pageUrl();
   let waitTimer = null;
   let dead = false;
@@ -81,7 +112,7 @@ export async function startWidget() {
   let pushListening = false;
 
   const stopDiscoveryTimer = () => { clearTimeout(waitTimer); waitTimer = null; };
-  const panelOpen = () => el('panel').classList.contains('open');
+  const panelOpen = () => !!el('panel')?.classList.contains('open');
 
   function kill() {
     if (dead) return;
@@ -111,9 +142,9 @@ export async function startWidget() {
         if (child.id === 'jobsimp-widget-host') continue;
         const r = child.getBoundingClientRect();
         if (r.width > avail + 4 && r.left <= 4 && r.height > 0) { // spans (near) full viewport, left-anchored
-          child.style.setProperty('max-width', `calc(100vw - ${w}px)`, 'important');
-          child.style.setProperty('min-width', '0', 'important');
-          child.style.setProperty('box-sizing', 'border-box', 'important');
+          child.style?.setProperty?.('max-width', `calc(100vw - ${w}px)`, 'important');
+          child.style?.setProperty?.('min-width', '0', 'important');
+          child.style?.setProperty?.('box-sizing', 'border-box', 'important');
           cappedEls.add(child);
         }
         walk(child, depth + 1);
@@ -130,47 +161,51 @@ export async function startWidget() {
   }
 
   function applyPanelWidth() {
-    const panel = el('panel');
-    if (!panel) return panelWidthForVw();
+    const panelEl = el('panel');
     const w = panelWidthForVw();
-    panel.style.width = `${w}px`;
+    if (panelEl?.style) panelEl.style.width = `${w}px`;
     return w;
   }
 
   function applyPush() {
     const w = applyPanelWidth();
     if (window.innerWidth <= PUSH_MIN_VW) { clearPush(); return; } // narrow screens: overlay is fine
-    const h = document.documentElement.style;
-    h.setProperty('margin-right', `${w}px`, 'important');
-    h.setProperty('overflow-x', 'hidden', 'important');
-    h.setProperty('transition', 'margin-right .2s ease', 'important');
-    document.body?.style.setProperty('min-width', '0', 'important');
+    const htmlStyle = document.documentElement?.style;
+    if (!htmlStyle?.setProperty) return;
+    htmlStyle.setProperty('margin-right', `${w}px`, 'important');
+    htmlStyle.setProperty('overflow-x', 'hidden', 'important');
+    htmlStyle.setProperty('transition', 'margin-right .2s ease', 'important');
+    document.body?.style?.setProperty?.('min-width', '0', 'important');
     forceCapWide(w);
     clearInterval(pushTimer);
     pushTimer = setInterval(() => { if (panelOpen()) forceCapWide(w); }, 1000); // re-cap after SPA re-renders
   }
   function clearPush() {
     clearInterval(pushTimer); pushTimer = null;
-    const h = document.documentElement.style;
-    h.removeProperty('margin-right');
-    h.removeProperty('overflow-x');
-    h.removeProperty('transition');
-    document.body?.style.removeProperty('min-width');
+    const htmlStyle = document.documentElement?.style;
+    if (htmlStyle?.removeProperty) {
+      htmlStyle.removeProperty('margin-right');
+      htmlStyle.removeProperty('overflow-x');
+      htmlStyle.removeProperty('transition');
+    }
+    document.body?.style?.removeProperty?.('min-width');
     uncapWide();
   }
   const onResize = () => { if (panelOpen()) applyPush(); else applyPanelWidth(); };
 
   function openPanel() {
     dismissedUrl = null;
-    el('badge').style.display = 'none';
+    const badge = el('badge');
+    const panelEl = el('panel');
+    if (badge) badge.style.display = 'none';
     applyPanelWidth();
-    el('panel').classList.add('open');
+    panelEl?.classList.add('open');
     requestAnimationFrame(applyPush);
     if (!pushListening) { window.addEventListener('resize', onResize); pushListening = true; }
   }
   applyPanelWidth(); // initial width before first open
   function closePanel() {
-    el('panel').classList.remove('open');
+    el('panel')?.classList.remove('open');
     clearPush();
     dismissedUrl = pageUrl();
     updateBadge();
@@ -179,9 +214,10 @@ export async function startWidget() {
   function unloadPanel() {
     stopDiscoveryTimer();
     currentJD = null;
-    el('panel').classList.remove('open');
+    el('panel')?.classList.remove('open');
     clearPush();
-    el('badge').style.display = 'none';
+    const badge = el('badge');
+    if (badge) badge.style.display = 'none';
   }
 
   // ---- badge: the reopen affordance. Shown on any job page whenever the panel is
@@ -189,51 +225,134 @@ export async function startWidget() {
   function updateBadge() {
     const badge = el('badge');
     const scoreEl = el('score');
+    if (!badge) return;
     if (view === 'none' || panelOpen()) { badge.style.display = 'none'; return; }
     badge.style.display = 'flex';
-    const cached = analysisCache.get(cacheKey());
+    const cached = getSessionAnalysis(currentJD || { url: pageUrl() }, currentResume()?.id);
     const score = cached?.match ? Number(cached.match.score) : NaN;
-    if (Number.isFinite(score)) {
+    if (scoreEl && Number.isFinite(score)) {
       scoreEl.style.display = 'flex';
       scoreEl.textContent = String(Math.round(score));
       scoreEl.style.background = score >= 70 ? '#34c07a' : score >= 40 ? '#e8b13f' : '#e5604c';
-    } else {
+    } else if (scoreEl) {
       scoreEl.style.display = 'none';
     }
   }
 
   // ---- rendering ----
+  const LINK_ICON = `<svg class="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+
+  function isHttpUrl(u) {
+    try {
+      const x = new URL(String(u || ''));
+      return x.protocol === 'http:' || x.protocol === 'https:';
+    } catch { return false; }
+  }
+
+  function normalizeCompanyLinkedIn(u) {
+    try {
+      const x = new URL(String(u || ''));
+      if (!/(^|\.)linkedin\.com$/i.test(x.hostname)) return '';
+      const m = x.pathname.match(/\/company\/([^/?#]+)/i);
+      if (!m?.[1]) return '';
+      return `https://www.linkedin.com/company/${decodeURIComponent(m[1]).replace(/\/+$/, '')}`;
+    } catch { return ''; }
+  }
+
+  /** Badge for users who need sponsorship or left it unknown/empty — skip only explicit No. */
+  function userCaresAboutSponsorship() {
+    const s = String(needsSponsorship || '').trim().toLowerCase();
+    if (/^(no|n|false|0)(\b|$)/.test(s)) return false;
+    return true; // empty, Unknown, Yes, free text (e.g. "F-1 OPT")
+  }
+
+  /** Job sponsorship → { text, tone: ok|bad|maybe }. */
+  function sponsorBadge(jobSpons) {
+    const v = clean(jobSpons).toLowerCase();
+    if (/^(yes|provided|available|supports?|open(s|ed)?|can sponsor|will sponsor)$/i.test(v) || (/\bsponsor(shi?p)?(\s+available|\s+provided|\s+support)?\b/i.test(v) && !/\b(not|no|doesn'?t|does not|without|never|cannot|can't)\b/i.test(v))) {
+      return { text: 'Sponsorship: Yes', tone: 'ok' };
+    }
+    if (/^(no|none|not sponsored|unavailable|not available|never|prohibited|does not support|without|cannot|can't)/i.test(v) || /\b(not|no|never|without|cannot|can't|doesn'?t|does not)\s*(offer|provide|support)?\s*(sponsor(shi?p)?)\b/i.test(v)) {
+      return { text: 'Sponsorship: No', tone: 'bad' };
+    }
+    return { text: 'Sponsorship: Unknown', tone: 'maybe' };
+  }
+
   function renderJob() {
     if (!currentJD) { el('jobCard').style.display = 'none'; el('peopleBox').style.display = 'none'; return; }
     el('noJd').style.display = 'none';
     el('jobCard').style.display = 'block';
-    el('jd_role').textContent = currentJD.role || '—';
+
+    const roleTxt = currentJD.role || '—';
+    const roleEl = el('jd_role');
+    if (isHttpUrl(currentJD.url)) {
+      roleEl.innerHTML = `<a href="${esc(currentJD.url)}" target="_blank" rel="noopener" title="Open job posting">${esc(roleTxt)}${LINK_ICON}</a>`;
+    } else {
+      roleEl.textContent = roleTxt;
+    }
+
+    const badge = el('jd_sponsor');
+    if (badge) {
+      if (userCaresAboutSponsorship()) {
+        const { text, tone } = sponsorBadge(currentJD.sponsorship);
+        badge.style.display = 'inline-block';
+        badge.className = `badge-sponsor ${tone}`;
+        badge.textContent = text;
+        badge.title = `Visa sponsorship: ${currentJD.sponsorship || 'Unknown'}`;
+      } else {
+        badge.style.display = 'none';
+        badge.className = 'badge-sponsor';
+        badge.textContent = '';
+      }
+    }
+
     const co = clean(currentJD.company);
-    el('jd_company').style.display = co ? 'block' : 'none';
-    el('jd_company').textContent = co;
+    const coLi = normalizeCompanyLinkedIn(currentJD.companyLinkedIn);
+    const coEl = el('jd_company');
+    if (co && coLi) {
+      coEl.style.display = 'block';
+      // Company LinkedIn only — no external icon
+      coEl.innerHTML = `<a href="${esc(coLi)}" target="_blank" rel="noopener" title="Open company on LinkedIn">${esc(co)}</a>`;
+    } else if (co) {
+      coEl.style.display = 'block';
+      coEl.textContent = co;
+    } else {
+      coEl.style.display = 'none';
+      coEl.textContent = '';
+    }
+
     const j = currentJD;
+    // Sponsorship shown as role badge for visa-needing users — omit from chips.
     const rows = [
       ['Type', j.type && j.type !== 'Unknown' ? j.type : ''],
       ['Location', j.location],
       ['Salary', j.salary],
       ['Posted', j.datePosted],
-      ['Sponsorship', j.sponsorship && j.sponsorship !== 'Unknown' ? j.sponsorship : ''],
       ['E-Verify', j.everify && j.everify !== 'Unknown' ? j.everify : ''],
     ].filter(([, v]) => clean(v));
-    el('jd_meta').innerHTML = rows.map(([k, v]) => `<div class="mrow"><span class="mk">${k}</span><span class="mv">${esc(v)}</span></div>`).join('');
-    el('jd_src').innerHTML = j.url ? `<a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.source || 'source')} ↗</a>` : '';
+    // Compact masonry-ish: short chips share a row; longer values take full width below.
+    const SHORT = 22;
+    const short = rows.filter(([, v]) => String(v).length <= SHORT);
+    const long = rows.filter(([, v]) => String(v).length > SHORT);
+    const chip = ([k, v], wide) =>
+      `<div class="mrow${wide ? ' wide' : ''}"><span class="mk">${esc(k)}</span><span class="mv">${esc(v)}</span></div>`;
+    el('jd_meta').innerHTML = [
+      ...short.map((r) => chip(r, false)),
+      ...long.map((r) => chip(r, true)),
+    ].join('');
 
     const people = Array.isArray(j.people) ? j.people : [];
     if (people.length) {
       el('peopleBox').style.display = 'block';
-      el('people').innerHTML = people.map((p) => `<div class="person">
-        <span class="pn">${esc(p.name)}</span>
-        ${p.title ? `<span class="pt">${esc(p.title)}</span>` : ''}
-        <span class="plinks">
-          ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Profile ↗</a>` : ''}
-          ${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : ''}
-        </span>
-      </div>`).join('');
+      el('people').innerHTML = people.map((p) => {
+        const name = clean(p.name) || 'Unknown';
+        const title = clean(p.title);
+        const profile = isHttpUrl(p.url) ? p.url : '';
+        const nameHtml = profile
+          ? `<a href="${esc(profile)}" target="_blank" rel="noopener">${esc(name)}</a>`
+          : esc(name);
+        return `<li>${nameHtml}${title ? `<span class="ptitle">${esc(title)}</span>` : ''}</li>`;
+      }).join('');
     } else {
       el('peopleBox').style.display = 'none';
     }
@@ -244,6 +363,10 @@ export async function startWidget() {
     for (const f of ['company', 'type', 'salary', 'location', 'sponsorship', 'everify']) {
       const cur = currentJD[f]; const val = clean(job[f]);
       if ((!cur || cur === 'Unknown') && val && val !== 'Unknown') currentJD[f] = val;
+    }
+    if (!normalizeCompanyLinkedIn(currentJD.companyLinkedIn)) {
+      const li = normalizeCompanyLinkedIn(job.companyLinkedIn);
+      if (li) currentJD.companyLinkedIn = li;
     }
     const e = discoveryCache.get(pageUrl());
     if (e) e.jd = currentJD;
@@ -270,50 +393,100 @@ export async function startWidget() {
     const items = (arr, cls) => (Array.isArray(arr) && arr.length)
       ? arr.slice(0, 12).map((x) => `<li class="${cls}">${esc(x)}</li>`).join('')
       : '<li class="muted">—</li>';
-    el('an_strengths').innerHTML = items(a.strengths, '');
-    el('an_gaps').innerHTML = items(a.gaps, 'gap');
-    el('an_add').innerHTML = items(a.addToResume, 'add');
+    // Prefer new fields; fall back to legacy cached shapes (strengths/gaps/addToResume).
+    const must = a.mustHave || a.gaps || [];
+    const good = a.goodToHave || a.addToResume || a.strengths || [];
+    el('an_must').innerHTML = items(must, 'gap');
+    el('an_good').innerHTML = items(good, 'add');
   }
 
   function currentResume() {
     const id = el('resumeSel')?.value || activeResumeId;
     return resumes.find((r) => r.id === id) || resumes.find((r) => r.isDefault) || resumes[0] || null;
   }
-  const cacheKey = () => (currentJD ? `${currentJD.url}::${currentResume()?.id || ''}` : '');
 
-  // ---- AI analysis (auto on open, cached per JD×resume) — the only matcher ----
+  /** Stable session keys for one JD × resume — jobId first so SPA URL noise doesn't miss. */
+  function sessionCacheKeys(jd, resumeId) {
+    const rid = resumeId || '';
+    const keys = [];
+    const jobId = jd?.jobId || extractJobId(jd?.url || pageUrl());
+    const jobKey = jd?.jobKey || (jobId ? jobCacheKey(jd?.url || pageUrl(), jobId) : '');
+    if (jobId) keys.push(`id:${jobId}::${rid}`);
+    if (jobKey) keys.push(`key:${jobKey}::${rid}`);
+    if (jd?.url) keys.push(`url:${jd.url}::${rid}`);
+    return keys;
+  }
+
+  function getSessionAnalysis(jd, resumeId) {
+    for (const k of sessionCacheKeys(jd, resumeId)) {
+      if (analysisCache.has(k)) return analysisCache.get(k);
+    }
+    // URL-only peek (before scrape finishes) — LinkedIn search-results?currentJobId=
+    const id = extractJobId(pageUrl());
+    if (id) {
+      const hit = analysisCache.get(`id:${id}::${resumeId || ''}`);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function setSessionAnalysis(jd, resumeId, data) {
+    for (const k of sessionCacheKeys(jd, resumeId)) analysisCache.set(k, data);
+  }
+
+  /** Apply analysis payload to the panel. Does not touch status — callers set that. */
+  function applyAnalysis(d) {
+    applyBackfill(d.job);
+    if (d.match) renderScore(d.match);
+    renderAnalysis(d.analysis);
+    el('analyzeBtn').style.display = 'inline-flex';
+  }
+
+  // ---- AI analysis: session by jobId → SW cache → LLM ----
   async function runAnalysis({ force = false } = {}) {
     if (!currentJD) return;
     const r = currentResume();
-    if (!r) { el('aiState').textContent = 'Add & select a parsed resume to analyze.'; return; }
-    const key = cacheKey();
-    if (!force && analysisCache.has(key)) {
-      const d = analysisCache.get(key);
-      applyBackfill(d.job); if (d.match) renderScore(d.match); renderAnalysis(d.analysis);
-      el('aiState').textContent = 'Analyzed (cached)';
-      return;
+    if (!r) { setStatus('Pick a parsed resume to analyze.', 'warn'); return; }
+
+    if (!force) {
+      const sessionHit = getSessionAnalysis(currentJD, r.id);
+      if (sessionHit) {
+        applyAnalysis(sessionHit);
+        setStatus('Recalled from this session.', 'info');
+        return;
+      }
     }
-    el('aiState').textContent = 'Analyzing with AI…';
+
+    setStatus('Analyzing…', 'busy');
     el('skeleton').style.display = 'block';
     el('analyzeBtn').disabled = true;
     const res = await send('jd.analyze', {
-      jdText: currentJD.jdText, url: currentJD.url, source: currentJD.source, job: currentJD, resumeId: r.id,
+      jdText: currentJD.jdText,
+      url: currentJD.url,
+      source: currentJD.source,
+      jobId: currentJD.jobId || extractJobId(currentJD.url || pageUrl()) || '',
+      jobKey: currentJD.jobKey || '',
+      job: currentJD,
+      resumeId: r.id,
+      force: !!force,
     });
     el('skeleton').style.display = 'none';
     el('analyzeBtn').disabled = false;
-    el('analyzeBtn').style.display = 'block';
-    if (!res?.ok) { el('aiState').textContent = `Analysis unavailable: ${res?.error || 'reload the tab'}`; return; }
+    el('analyzeBtn').style.display = 'inline-flex';
+    if (!res?.ok) {
+      setStatus(summarizeError(res?.error), 'err');
+      return;
+    }
     const d = res.data || {};
     const norm = {
       job: d.job || {},
       match: d.match ? { score: Number(d.match.score) || 0, matched: d.match.matched || [], missing: d.match.missing || [] } : null,
       analysis: d.analysis || null,
     };
-    analysisCache.set(key, norm);
-    el('aiState').textContent = 'Analyzed';
-    applyBackfill(norm.job);
-    if (norm.match) renderScore(norm.match);
-    renderAnalysis(norm.analysis);
+    setSessionAnalysis(currentJD, r.id, norm);
+    applyAnalysis(norm);
+    // Interim outcome — not a final "ok"
+    setStatus(d.cached ? 'Loaded saved analysis.' : 'Analysis ready.', 'info');
   }
 
   // ---- data + discovery ----
@@ -322,11 +495,18 @@ export async function startWidget() {
     if (bootstrapPromise) return bootstrapPromise;
     bootstrapPromise = (async () => {
       if (!alive()) { kill(); return; }
-      const [authRes, resRes] = await Promise.all([send('auth.get'), send('resumes.list')]);
+      const [authRes, resRes, profileRes] = await Promise.all([
+        send('auth.get'),
+        send('resumes.list'),
+        send('profile.get'),
+      ]);
       if (!alive()) { kill(); return; }
       bootstrapped = true;
       user = authRes?.data || null;
       resumes = (resRes?.data || []).filter((r) => r.parsed);
+      needsSponsorship = profileRes?.data?.basics?.needsSponsorship
+        || profileRes?.data?.metrics?.needsSponsorship
+        || '';
       activeResumeId = resumes.find((r) => r.isDefault)?.id || resumes[0]?.id || null;
       el('who').textContent = user ? user.email : 'Not signed in';
       if (user?.picture) { el('pic').src = user.picture; el('pic').style.display = 'block'; }
@@ -339,10 +519,14 @@ export async function startWidget() {
     el('authGate').style.display = ready ? 'none' : 'block';
     el('main').style.display = ready ? 'block' : 'none';
     if (!ready) return;
-    const sel = el('resumeSel').value || activeResumeId;
+    const defId = resumes.find((r) => r.isDefault)?.id || resumes[0]?.id || null;
+    // Keep user's in-session pick if still present; otherwise fall back to default resume.
+    const pick = (activeResumeId && resumes.some((r) => r.id === activeResumeId))
+      ? activeResumeId
+      : defId;
     el('resumeSel').innerHTML = resumes.map((r) =>
-      `<option value="${r.id}" ${r.id === sel || (!sel && r.isDefault) ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
-    activeResumeId = el('resumeSel').value || activeResumeId;
+      `<option value="${r.id}" ${r.id === pick ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+    activeResumeId = el('resumeSel').value || pick;
   }
 
   function onJdReady(jd) {
@@ -399,7 +583,7 @@ export async function startWidget() {
     } else {
       // 'badge' view (or a dismissed posting): keep the panel closed, un-shrink the
       // page, show the badge. Still scrape in the background so a badge-click is instant.
-      el('panel').classList.remove('open');
+      el('panel')?.classList.remove('open');
       clearPush();
       updateBadge();
       discoverUrl(pageUrl());
@@ -416,7 +600,7 @@ export async function startWidget() {
     dismissedUrl = null;
     // reset stale content for the new URL
     el('jobCard').style.display = 'none'; el('peopleBox').style.display = 'none';
-    el('matchBox').style.display = 'none'; el('analysisBox').style.display = 'none'; el('aiState').textContent = '';
+    el('matchBox').style.display = 'none'; el('analysisBox').style.display = 'none'; setStatus('');
     el('noJd').style.display = 'block'; el('noJd').textContent = 'Scanning this page…';
     applyView();
   }
@@ -440,7 +624,12 @@ export async function startWidget() {
       openPanel();
       el('noJd').style.display = 'block';
       if (!currentJD) el('noJd').textContent = 'Scanning this page…';
-      bootstrap().then(() => { if (alive()) fillResumeSelect(); });
+      bootstrap().then(() => {
+        if (!alive()) return;
+        fillResumeSelect();
+        // Profile (sponsorship) may land after a background scrape already rendered.
+        if (currentJD) renderJob();
+      });
       discoverUrl(pageUrl()); // renders/analyzes when the JD is ready (panel is now open)
     });
   })();
@@ -449,6 +638,7 @@ export async function startWidget() {
   el('setupBtn').onclick = () => { if (alive()) send('open.onboarding'); };
   el('resumeSel').onchange = () => {
     activeResumeId = el('resumeSel').value || null;
+    // Session pick only — does not change the saved default resume.
     if (alive() && activeResumeId) send('resumes.select', { id: activeResumeId });
     if (currentJD) runAnalysis();
   };
@@ -456,24 +646,39 @@ export async function startWidget() {
 
   el('trackBtn').onclick = async () => {
     if (!alive()) { kill(); return; }
-    if (!currentJD) { el('msg').textContent = 'No JD detected here.'; return; }
+    if (!currentJD) { setStatus('No job on this page yet.', 'warn'); return; }
+    setStatus('Saving…', 'busy');
     const res = await send('job.save', { ...currentJD, status: 'To Apply' });
-    el('msg').textContent = res?.ok ? 'Tracked — edit details in the dashboard.' : `Failed: ${res?.error || 'reload the tab'}`;
+    if (res?.ok) setStatus('Saved to dashboard.', 'info');
+    else setStatus(summarizeError(res?.error), 'err');
   };
 
-  el('autofillBtn').onclick = async () => {
+  async function runApply(mode) {
     if (!alive()) { kill(); return; }
     if (activeResumeId) await send('resumes.select', { id: activeResumeId });
-    const res = await send('autofill.here');
-    if (!res?.ok) el('msg').textContent = `Autofill failed: ${res?.error || 'reload the tab'}`;
-  };
+    setStatus(mode === 'tailored' ? 'Preparing tailored apply…' : 'Filling application…', 'busy');
+    const res = await send('autofill.here', { tailored: mode === 'tailored' });
+    if (!res?.ok) setStatus(summarizeError(res?.error), 'err');
+  }
+  el('autofillBtn').onclick = () => runApply('simple');
+  el('tailoredApplyBtn').onclick = () => runApply('tailored');
 
   try {
     chrome.runtime.onMessage.addListener((m) => {
       if (!alive()) { kill(); return; }
       if (m?.type === '__autofill_result') {
-        const { filled, unmatched } = m.payload;
-        el('msg').textContent = `Filled ${filled} field(s).${unmatched?.length ? `\nNo answer for: ${unmatched.slice(0, 4).join(' · ')}…` : ''}`;
+        const { filled, unmatched } = m.payload || {};
+        if (!filled) {
+          setStatus('No fields filled — open the application form and try again.', 'warn');
+          return;
+        }
+        const miss = Array.isArray(unmatched) && unmatched.length
+          ? ` Missing: ${unmatched.slice(0, 4).join(', ')}${unmatched.length > 4 ? '…' : ''}.`
+          : '';
+        setStatus(
+          `Filled ${filled} field${filled === 1 ? '' : 's'}.${miss}`,
+          miss ? 'warn' : 'ok',
+        );
       }
     });
   } catch { kill(); return; }

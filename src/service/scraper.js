@@ -4,6 +4,10 @@
 // text block, then hand it to the LLM (jd.analyze) which does ALL the meaningful
 // extraction (company, type, salary, location, sponsorship, e-verify) + matching.
 // We deliberately do NOT infer fields here — the LLM reads the raw JD far better.
+import { extractJobId, jobCacheKey } from '../static/jobUrl.js';
+
+export { extractJobId, jobCacheKey };
+
 export function installScraper() {
   if (window.__jobsimpScraper) return window.__jobsimpScraper;
 
@@ -110,23 +114,82 @@ export function installScraper() {
     return out.slice(0, 8);
   }
 
+  /** Normalize only real LinkedIn company page URLs — never invent. */
+  function normalizeCompanyLinkedIn(href) {
+    try {
+      const u = new URL(String(href || ''), location.href);
+      if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) return '';
+      const m = u.pathname.match(/\/company\/([^/?#]+)/i);
+      const slug = m?.[1] ? decodeURIComponent(m[1]).replace(/\/+$/, '') : '';
+      if (!slug || /^(unknown|null|undefined)$/i.test(slug)) return '';
+      return `https://www.linkedin.com/company/${slug}`;
+    } catch { return ''; }
+  }
+
+  function companyLinkedInFromOrg(org) {
+    if (!org || typeof org !== 'object') return '';
+    const candidates = [];
+    const push = (v) => {
+      if (!v) return;
+      if (Array.isArray(v)) v.forEach(push);
+      else if (typeof v === 'string') candidates.push(v);
+      else if (typeof v === 'object' && v.url) candidates.push(v.url);
+    };
+    push(org.sameAs);
+    push(org.url);
+    push(org['@id']);
+    for (const c of candidates) {
+      const n = normalizeCompanyLinkedIn(c);
+      if (n) return n;
+    }
+    return '';
+  }
+
+  /** Verified LinkedIn company URL from the live DOM / JSON-LD only. */
+  function scrapeCompanyLinkedIn(jsonLdOrg) {
+    const fromLd = companyLinkedInFromOrg(jsonLdOrg);
+    if (fromLd) return fromLd;
+
+    const sels = [
+      '.job-details-jobs-unified-top-card__company-name a[href*="/company/"]',
+      '.jobs-unified-top-card__company-name a[href*="/company/"]',
+      'a.job-details-jobs-unified-top-card__company-name[href*="/company/"]',
+      '.job-details-jobs-unified-top-card__top-card-top-company a[href*="/company/"]',
+      '[class*="jobs-unified-top-card"] a[href*="/company/"]',
+      'a[data-test="employer-name"][href*="linkedin.com/company/"]',
+      'a[href*="linkedin.com/company/"]',
+    ];
+    for (const sel of sels) {
+      const a = document.querySelector(sel);
+      const n = normalizeCompanyLinkedIn(a?.href);
+      if (n) return n;
+    }
+    return '';
+  }
+
   // ---------- light normalized result ----------
-  function result(via, { role, company, jdText }) {
+  function result(via, { role, company, jdText, companyLinkedIn = '', jsonLdOrg = null }) {
     const jd = String(jdText || '').slice(0, MAX_JD_CHARS);
     let roleC = clean(role) || clean(document.title);
     if (roleC.includes('|')) roleC = clean(roleC.split('|')[0]); // "Role | Company | Site" → "Role"
     const people = scrapePeople();
+    const href = pageUrl();
+    const jobId = extractJobId(href);
+    const li = normalizeCompanyLinkedIn(companyLinkedIn) || scrapeCompanyLinkedIn(jsonLdOrg);
     const r = {
       via,
       role: roleC.slice(0, 140),
       company: lightCompany(company),
+      companyLinkedIn: li,
       jdText: jd,
       people,
-      url: pageUrl(),
+      url: href,
+      jobId,
+      jobKey: jobCacheKey(href, jobId),
       source: location.hostname.replace(/^www\./, ''),
       scrapedAt: Date.now(),
     };
-    log('result', `✓ via ${via} — role="${r.role}" company="${r.company}" people=${people.length} jd=${r.jdText.length} chars`);
+    log('result', `✓ via ${via} — jobId="${r.jobId || '—'}" role="${r.role}" company="${r.company}" companyLI="${r.companyLinkedIn || '—'}" people=${people.length} jd=${r.jdText.length} chars`);
     return r;
   }
 
@@ -155,7 +218,12 @@ export function installScraper() {
       if (jdText.length < MIN_JD_CHARS) continue;
 
       const org = jp.hiringOrganization;
-      return result('json-ld', { role: jp.title, company: typeof org === 'string' ? org : org?.name, jdText });
+      return result('json-ld', {
+        role: jp.title,
+        company: typeof org === 'string' ? org : org?.name,
+        jdText,
+        jsonLdOrg: typeof org === 'object' ? org : null,
+      });
     }
     return null;
   }
@@ -278,6 +346,8 @@ export function installScraper() {
 
   window.__jobsimpScraper = {
     scrape,
+    extractJobId,
+    jobCacheKey,
     logs,
     classify: classifyPage,                       // 'jd' | 'application' | 'both' | 'none'
     matchesHost: (host) => !!siteFor(host),

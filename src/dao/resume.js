@@ -80,6 +80,8 @@ export class Resume {
         await putEntity(TYPES.RESUME, { ...payload, isDefault: want }, r.id);
       }
     }
+    // Default is what the widget auto-selects — keep active pointer in sync.
+    await this.select(id);
     return true;
   }
 

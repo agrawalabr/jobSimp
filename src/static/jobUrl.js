@@ -60,3 +60,71 @@ export function decideView(u = location.href) {
     return 'none';
   }
 }
+
+const JOB_ID_QS = ['jk', 'jobid', 'gh_jid', 'currentjobid', 'currentJobId', 'reqid', 'job_id', 'jobId', 'pid'];
+
+/**
+ * Pull a stable external job id from a posting URL (for cache keys + autofill context).
+ * Returns '' when none found.
+ */
+export function extractJobId(u = typeof location !== 'undefined' ? location.href : '') {
+  try {
+    const base = typeof location !== 'undefined' ? location.href : u;
+    const url = new URL(u, base);
+    const path = url.pathname;
+
+    // Query params — case-insensitive (LinkedIn uses currentJobId)
+    const wanted = new Set(JOB_ID_QS.map((k) => k.toLowerCase()));
+    for (const [k, v] of url.searchParams.entries()) {
+      if (wanted.has(k.toLowerCase()) && String(v || '').trim()) return String(v).trim();
+    }
+
+    // LinkedIn: /jobs/view/4440054893 , /jobs-guest/jobs/view/…, /jobs-guest/jobs/api/jobPosting/…
+    let m = path.match(/\/jobs?(?:-guest)?\/(?:jobs\/)?(?:view|api\/jobPosting)\/(\d+)/i);
+    if (m) return m[1];
+    m = path.match(/\/jobs?\/view\/[\w-]+-(\d{5,})\b/i);
+    if (m) return m[1];
+
+    // Greenhouse / SmartRecruiters-style numeric job path
+    m = path.match(/\/(?:jobs?|job)\/(\d{4,})\b/i);
+    if (m) return m[1];
+
+    // Workday: /job/Location/REQ-12345 or similar slug
+    m = path.match(/\/job\/[^/]+\/([A-Za-z0-9._-]{5,})\/?(?:$|\?)/i);
+    if (m) return m[1];
+
+    // Lever / Ashby UUID in path
+    m = path.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i);
+    if (m) return m[1];
+
+    // Glassdoor: …-JL_123456… or trailing digits on listing slug
+    m = path.match(/\/job-listing\/[^/]*?(JL_?\d+|\d{6,})/i);
+    if (m) return m[1];
+
+    // Generic careers path ending with digits: /careers/eng-88231
+    m = path.match(/\/(?:jobs?|careers?|positions?|openings?|opportunities|vacancies)\/(?:[^/]*?[-_])?(\d{4,})\/?$/i);
+    if (m) return m[1];
+
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+/** Cache / dedupe key: prefer host:jobId, else normalized URL (no hash, stripped tracking qs). */
+export function jobCacheKey(u = '', jobId = '') {
+  try {
+    const base = typeof location !== 'undefined' ? location.href : u;
+    const url = new URL(u || base, base);
+    const host = url.hostname.replace(/^www\./, '');
+    const id = jobId || extractJobId(url.href);
+    if (id) return `${host}:${id}`;
+    url.hash = '';
+    for (const k of [...url.searchParams.keys()]) {
+      if (/^(utm_|trk|ref|source|si|currentJobId)/i.test(k)) url.searchParams.delete(k);
+    }
+    return `url:${host}${url.pathname}${url.search}`;
+  } catch {
+    return `url:${String(u || '').split('#')[0]}`;
+  }
+}
