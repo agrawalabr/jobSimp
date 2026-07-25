@@ -29,7 +29,7 @@
     ],
     "rewrites": [
       {
-        "source": "/api/**",
+        "source": "/v1/api/**",
         "function": {
           "functionId": "api",
           "region": "us-central1"

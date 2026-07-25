@@ -11,7 +11,7 @@ Launch website for JobSimp and the **public open-tracking beacon** used by outre
 
 Do **not** put a `.sqlite` file on Cloud Functions — ephemeral disk / no shared state.
 
-Optional (recommended in prod): set `BEACON_API_KEY` so register / track / delete require `Authorization: Bearer <key>` or `X-Beacon-Key`. The tracking **pixel stays public** (email clients cannot send headers).
+Optional (recommended in prod): set `BEACON_API_KEY` so register / track / reset / delete require `Authorization: Bearer <key>` or `X-Beacon-Key`. The tracking **pixel GIF stays public** (email clients cannot send headers).
 
 ## Run (dev)
 
@@ -24,12 +24,24 @@ npm start
 - Launch UI: http://localhost:3000 (CRA; `/api` proxied to the beacon server)
 - Beacon API: http://localhost:8787
 
-## Beacon API
+## Beacon API (v1)
 
-### 1. Register a key
+Canonical resource: `/v1/api/beacon/pixel`.
+
+| Method | Path | Auth | Behavior |
+|---|---|---|---|
+| `POST` | `/v1/api/beacon/pixel` | optional key | Register (`count: 0`) |
+| `GET` | `/v1/api/beacon/pixel/<id>.gif` | **public** | Hit + 1×1 GIF |
+| `GET` | `/v1/api/beacon/pixel/<id>` | optional key | Track (JSON payload) |
+| `PUT` | `/v1/api/beacon/pixel/<id>` | optional key | Reset `count = 0` |
+| `DELETE` | `/v1/api/beacon/pixel/<id>` | optional key | Delete (idempotent) |
+
+Bare `GET` is **track** (JSON). Always embed the open-tracking image with the `.gif` suffix so it does not collide with track.
+
+### 1. Register
 
 ```http
-POST /api/beacon/register
+POST /v1/api/beacon/pixel
 Content-Type: application/json
 
 { "id": "optional-custom-id", "jobId": "…", "emailId": "…", "to": "hm@co.com" }
@@ -37,24 +49,22 @@ Content-Type: application/json
 
 Creates `{ count: 0, … }`. Omit `id` to auto-generate a UUID. Extra body fields → `meta`.
 
-### 2. Update (pixel download) — always public
+### 2. Pixel download — always public
 
 ```http
-GET /api/beacon/pixel/<id>.gif
-GET /api/beacon/pixel/<id>
-GET /api/beacon/update/<id>
+GET /v1/api/beacon/pixel/<id>.gif
 ```
 
 Increments `count`, sets `lastHitAt`, returns a 1×1 GIF.
 
 ```html
-<img src="https://YOUR_HOST/api/beacon/pixel/<id>.gif" width="1" height="1" alt="" />
+<img src="https://YOUR_HOST/v1/api/beacon/pixel/<id>.gif" width="1" height="1" alt="" />
 ```
 
 ### 3. Track (read payload)
 
 ```http
-GET /api/beacon/track/<id>
+GET /v1/api/beacon/pixel/<id>
 ```
 
 ```json
@@ -68,11 +78,21 @@ GET /api/beacon/track/<id>
 }
 ```
 
-### 4. Delete (unregister — call when outreach email is deleted)
+### 4. Reset count (reuse pixel id before a new send)
 
 ```http
-DELETE /api/beacon/<id>
-DELETE /api/beacon/register/<id>
+PUT /v1/api/beacon/pixel/<id>
+PUT /v1/api/beacon/pixel/<id>.gif
+```
+
+Sets `count = 0`, clears `lastHitAt`, bumps `updatedAt`. Keeps `createdAt` and `meta`. Returns the same JSON shape as track/register. `404` if the beacon does not exist.
+
+Call this whenever an existing pixel id is reused so prior opens do not carry over.
+
+### 5. Delete
+
+```http
+DELETE /v1/api/beacon/pixel/<id>
 ```
 
 Idempotent:
@@ -98,7 +118,7 @@ firebase deploy --only hosting,functions,firestore
 
 Architecture:
 
-1. **Hosting** → React `build/` (launch page) + rewrite `/api/**` → Cloud Function `api`
+1. **Hosting** → React `build/` (launch page) + rewrite `/v1/api/**` → Cloud Function `api`
 2. **Cloud Function `api`** → Express beacon API (`BEACON_STORE=firestore`)
 3. **Firestore** → `beacons/{id}` (client rules deny-all; Admin SDK writes)
 

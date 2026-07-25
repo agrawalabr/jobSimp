@@ -78,6 +78,24 @@ function getBeacon(id) {
   return rowToPayload(db.prepare('SELECT * FROM beacons WHERE id = ?').get(key));
 }
 
+/** Reset open count to 0 (pixel id reuse before a new send). Returns null if missing. */
+function resetBeacon(id) {
+  const key = String(id || '').replace(/\.gif$/i, '').trim();
+  if (!key) return null;
+
+  const existing = db.prepare('SELECT * FROM beacons WHERE id = ?').get(key);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE beacons
+    SET count = 0, updated_at = ?, last_hit_at = NULL
+    WHERE id = ?
+  `).run(now, key);
+
+  return rowToPayload(db.prepare('SELECT * FROM beacons WHERE id = ?').get(key));
+}
+
 /** Idempotent: returns { id, deleted: boolean }. */
 function deleteBeacon(id) {
   const key = String(id || '').trim();
@@ -99,6 +117,7 @@ module.exports = {
   registerBeacon,
   hitBeacon,
   getBeacon,
+  resetBeacon,
   deleteBeacon,
   closeDb,
 };

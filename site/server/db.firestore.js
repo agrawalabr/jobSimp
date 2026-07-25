@@ -88,6 +88,29 @@ function createFirestoreStore() {
     return snap.exists ? docToPayload(key, snap.data()) : null;
   }
 
+  /** Reset open count to 0 (pixel id reuse before a new send). Returns null if missing. */
+  async function resetBeacon(id) {
+    const key = String(id || '').replace(/\.gif$/i, '').trim();
+    if (!key) return null;
+
+    const ref = col.doc(key);
+    const snap = await ref.get();
+    if (!snap.exists) return null;
+
+    const now = new Date().toISOString();
+    await ref.update({
+      count: 0,
+      updatedAt: now,
+      lastHitAt: null,
+    });
+    return docToPayload(key, {
+      ...snap.data(),
+      count: 0,
+      updatedAt: now,
+      lastHitAt: null,
+    });
+  }
+
   async function deleteBeacon(id) {
     const key = String(id || '').trim();
     if (!key) {
@@ -107,6 +130,7 @@ function createFirestoreStore() {
     registerBeacon,
     hitBeacon,
     getBeacon,
+    resetBeacon,
     deleteBeacon,
     closeDb: async () => {},
   };

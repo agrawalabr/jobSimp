@@ -24,7 +24,12 @@ function sendError(res, err) {
   });
 }
 
-/** Optional gate for register / track / delete. Pixel stays public. */
+/** Strip optional .gif / .json suffix and trim. */
+function normalizeBeaconId(id) {
+  return String(id || '').replace(/\.(gif|json)$/i, '').trim();
+}
+
+/** Optional gate for register / track / reset / delete. Pixel stays public. */
 function requireApiKey(req, res, next) {
   if (!API_KEY) return next();
   const header = req.get('authorization') || '';
@@ -39,11 +44,7 @@ function requireApiKey(req, res, next) {
   next();
 }
 
-/**
- * 1) Register a key
- * POST /api/beacon/register
- */
-app.post('/api/beacon/register', requireApiKey, async (req, res) => {
+async function registerHandler(req, res) {
   try {
     const { id, meta, ...rest } = req.body || {};
     const details = meta && typeof meta === 'object'
@@ -54,14 +55,11 @@ app.post('/api/beacon/register', requireApiKey, async (req, res) => {
   } catch (err) {
     sendError(res, err);
   }
-});
+}
 
-/**
- * 2) Update by key (pixel download)
- * GET /api/beacon/pixel/:id.gif | /api/beacon/pixel/:id | /api/beacon/update/:id
- */
+/** Public: increment count and return 1×1 GIF (never fail the image load). */
 async function pixelHandler(req, res) {
-  const id = String(req.params.id || '').replace(/\.gif$/i, '');
+  const id = normalizeBeaconId(req.params.id);
   try {
     await store.hitBeacon(id);
   } catch {
@@ -78,43 +76,66 @@ async function pixelHandler(req, res) {
   res.status(200).end(PIXEL_GIF);
 }
 
-app.get('/api/beacon/pixel/:id', pixelHandler);
-app.get('/api/beacon/update/:id', pixelHandler);
-
-/**
- * 3) Track by key — return payload
- * GET /api/beacon/track/:id
- */
-app.get('/api/beacon/track/:id', requireApiKey, async (req, res) => {
+async function trackHandler(req, res) {
+  const id = normalizeBeaconId(req.params.id);
   try {
-    const payload = await store.getBeacon(req.params.id);
+    const payload = await store.getBeacon(id);
     if (!payload) {
-      res.status(404).json({ error: 'Beacon not found', id: req.params.id });
+      res.status(404).json({ error: 'Beacon not found', id });
       return;
     }
     res.json(payload);
   } catch (err) {
     sendError(res, err);
   }
-});
+}
 
-/**
- * 4) Delete / unregister a key (e.g. when outreach email is deleted)
- * DELETE /api/beacon/:id
- * DELETE /api/beacon/register/:id
- * Idempotent: { id, deleted: true|false }
- */
-async function deleteHandler(req, res) {
+async function resetHandler(req, res) {
+  const id = normalizeBeaconId(req.params.id);
   try {
-    const result = await store.deleteBeacon(req.params.id);
+    const payload = await store.resetBeacon(id);
+    if (!payload) {
+      res.status(404).json({ error: 'Beacon not found', id });
+      return;
+    }
+    res.json(payload);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+/** Idempotent: { id, deleted: true|false } */
+async function deleteHandler(req, res) {
+  const id = normalizeBeaconId(req.params.id);
+  try {
+    const result = await store.deleteBeacon(id);
     res.json(result);
   } catch (err) {
     sendError(res, err);
   }
 }
 
-app.delete('/api/beacon/:id', requireApiKey, deleteHandler);
-app.delete('/api/beacon/register/:id', requireApiKey, deleteHandler);
+/**
+ * v1 resource API (canonical)
+ *
+ * POST   /v1/api/beacon/pixel           → register
+ * GET    /v1/api/beacon/pixel/:id.gif   → pixel hit (public GIF)
+ * GET    /v1/api/beacon/pixel/:id       → track (JSON)
+ * PUT    /v1/api/beacon/pixel/:id       → reset count=0
+ * DELETE /v1/api/beacon/pixel/:id       → delete
+ *
+ * Bare GET is track; use the .gif suffix for the open-tracking image so the
+ * two never collide on the same path.
+ */
+app.post('/v1/api/beacon/pixel', requireApiKey, registerHandler);
+app.get('/v1/api/beacon/pixel/:id', (req, res, next) => {
+  if (/\.gif$/i.test(String(req.params.id || ''))) {
+    return pixelHandler(req, res);
+  }
+  return requireApiKey(req, res, next);
+}, trackHandler);
+app.put('/v1/api/beacon/pixel/:id', requireApiKey, resetHandler);
+app.delete('/v1/api/beacon/pixel/:id', requireApiKey, deleteHandler);
 
 module.exports = app;
 
@@ -123,7 +144,7 @@ if (require.main === module) {
   const buildDir = path.join(__dirname, '..', 'build');
   app.use(express.static(buildDir));
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/')) return next();
+    if (req.path.startsWith('/v1/')) return next();
     res.sendFile(path.join(buildDir, 'index.html'), (err) => {
       if (err) res.status(404).json({ error: 'Not found' });
     });

@@ -3,7 +3,7 @@
  * Env must be set before requiring ./server (store selector reads it at load).
  *
  * Optional: set BEACON_API_KEY on this function (Cloud Console → Variables)
- * to protect register/track/delete. Pixel routes stay public.
+ * to protect register/track/reset/delete. Pixel GIF routes stay public.
  */
 
 const {setGlobalOptions} = require("firebase-functions");
