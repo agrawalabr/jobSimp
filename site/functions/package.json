@@ -5,7 +5,7 @@
     "sync:server": "node scripts/sync-server.js",
     "lint": "eslint .",
     "serve": "npm run sync:server && firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "firebase deploy --only functions --force",
     "logs": "firebase functions:log"
   },
   "engines": {
