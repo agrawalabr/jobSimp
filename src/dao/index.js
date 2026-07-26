@@ -14,3 +14,5 @@ export { Job, job } from './job.js';
 export { Answer, answer } from './answer.js';
 export { Email, email } from './email.js';
 export { Discovered, discovered } from './discovered.js';
+export { Transaction, transaction } from './transaction.js';
+export { JdGraph, jdgraph } from './jdgraph.js';

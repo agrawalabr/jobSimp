@@ -1,12 +1,4 @@
-const crypto = require('crypto');
-
-/**
- * Firestore beacon store for open-tracking.
- * Docs: beacons/{id}
- * Requires FIREBASE_PROJECT_ID (ADC on Cloud Functions; GOOGLE_APPLICATION_CREDENTIALS locally).
- * Client access should be deny-all in firestore.rules — Admin SDK bypasses rules.
- */
-function createFirestoreStore() {
+function create({ toPayload, matchesFilter }) {
   const admin = require('firebase-admin');
 
   if (!admin.apps.length) {
@@ -20,59 +12,32 @@ function createFirestoreStore() {
   const col = admin.firestore().collection('beacons');
   const { FieldValue } = admin.firestore;
 
-  function docToPayload(id, data) {
-    if (!data) return null;
-    return {
-      id,
-      count: data.count || 0,
-      meta: data.meta || {},
-      createdAt: data.createdAt || null,
-      updatedAt: data.updatedAt || null,
-      lastHitAt: data.lastHitAt || null,
-    };
-  }
-
-  async function registerBeacon({ id, meta = {} } = {}) {
-    const key = String(id || crypto.randomUUID()).trim();
-    if (!key) throw new Error('id is required');
-
-    const ref = col.doc(key);
+  async function register({ id, meta }) {
+    const ref = col.doc(id);
     const existing = await ref.get();
     if (existing.exists) {
-      const err = new Error(`Beacon already registered: ${key}`);
+      const err = new Error(`Beacon already registered: ${id}`);
       err.status = 409;
-      err.payload = docToPayload(key, existing.data());
       throw err;
     }
-
     const now = new Date().toISOString();
-    const data = {
-      count: 0,
-      meta: meta ?? {},
-      createdAt: now,
-      updatedAt: now,
-      lastHitAt: null,
-    };
+    const data = { count: 0, meta, createdAt: now, updatedAt: now, lastHitAt: null };
     await ref.set(data);
-    return docToPayload(key, data);
+    return toPayload(id, data);
   }
 
-  async function hitBeacon(id) {
+  async function hit(id) {
     const key = String(id || '').trim();
     if (!key) return null;
-
-    const ref = col.doc(key);
     const now = new Date().toISOString();
-
     try {
-      await ref.update({
+      await col.doc(key).update({
         count: FieldValue.increment(1),
         updatedAt: now,
         lastHitAt: now,
       });
       return { id: key };
     } catch (err) {
-      // Missing doc — ignore (pixel still returned by HTTP layer)
       if (err.code === 5 || err.code === 'not-found' ||
           /not found|NOT_FOUND/i.test(err.message || '')) {
         return null;
@@ -81,59 +46,54 @@ function createFirestoreStore() {
     }
   }
 
-  async function getBeacon(id) {
-    const key = String(id || '').trim();
-    if (!key) return null;
-    const snap = await col.doc(key).get();
-    return snap.exists ? docToPayload(key, snap.data()) : null;
-  }
-
-  /** Reset open count to 0 (pixel id reuse before a new send). Returns null if missing. */
-  async function resetBeacon(id) {
+  async function reset(id) {
     const key = String(id || '').replace(/\.gif$/i, '').trim();
     if (!key) return null;
-
     const ref = col.doc(key);
     const snap = await ref.get();
     if (!snap.exists) return null;
-
     const now = new Date().toISOString();
-    await ref.update({
-      count: 0,
-      updatedAt: now,
-      lastHitAt: null,
-    });
-    return docToPayload(key, {
-      ...snap.data(),
-      count: 0,
-      updatedAt: now,
-      lastHitAt: null,
-    });
+    await ref.update({ count: 0, updatedAt: now, lastHitAt: null });
+    return toPayload(key, { ...snap.data(), count: 0, updatedAt: now, lastHitAt: null });
   }
 
-  async function deleteBeacon(id) {
-    const key = String(id || '').trim();
-    if (!key) {
-      const err = new Error('id is required');
-      err.status = 400;
-      throw err;
+  async function list(filter) {
+    if (filter.id) {
+      const snap = await col.doc(filter.id).get();
+      if (!snap.exists) return [];
+      const doc = toPayload(snap.id, snap.data());
+      return matchesFilter(doc, filter) ? [doc] : [];
     }
-    const ref = col.doc(key);
-    const snap = await ref.get();
-    if (!snap.exists) return { id: key, deleted: false };
-    await ref.delete();
-    return { id: key, deleted: true };
+
+    if (filter.from == null && filter.to == null) return [];
+    // Prefer a single indexed predicate; AND the rest in matchesFilter (no composite index).
+    let q = col;
+    if (filter.from != null) q = q.where('meta.from', '==', filter.from);
+    else q = q.where('meta.to', 'array-contains', filter.to);
+
+    const snap = await q.get();
+    return snap.docs
+      .map((d) => toPayload(d.id, d.data()))
+      .filter((d) => matchesFilter(d, filter));
+  }
+
+  async function remove(filter) {
+    const rows = await list(filter);
+    const batch = admin.firestore().batch();
+    for (const d of rows) batch.delete(col.doc(d.id));
+    if (rows.length) await batch.commit();
+    return rows;
   }
 
   return {
     name: 'firestore',
-    registerBeacon,
-    hitBeacon,
-    getBeacon,
-    resetBeacon,
-    deleteBeacon,
-    closeDb: async () => {},
+    register,
+    hit,
+    reset,
+    list,
+    remove,
+    close: async () => {},
   };
 }
 
-module.exports = { createFirestoreStore };
+module.exports = { create };

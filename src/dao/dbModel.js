@@ -21,6 +21,8 @@ export const TYPES = Object.freeze({
   DISCOVERED: 'discovered',
   SETTINGS: 'settings',
   SECRETS: 'secrets',
+  TRANSACTION: 'transaction',
+  JDGRAPH: 'jdgraph',
 });
 
 /**
@@ -39,6 +41,8 @@ export const STORES = Object.freeze({
   [TYPES.DISCOVERED]: 'discovered',
   [TYPES.SETTINGS]: 'settings',
   [TYPES.SECRETS]: 'secrets',
+  [TYPES.TRANSACTION]: 'transaction',
+  [TYPES.JDGRAPH]: 'jdgraph',
   META: 'meta',
   ENTITIES: 'entities', // legacy dump / reserved
 });
@@ -87,6 +91,8 @@ export const newJobId = () => `${TYPES.JOB}:${uuid()}`;
 export const newAnswerId = () => `${TYPES.ANSWER}:${uuid()}`;
 export const newEmailId = () => `${TYPES.EMAIL}:${uuid()}`;
 export const graphEntityId = (resumeId) => `${TYPES.GRAPH}:${resumeId}`;
+export const transactionId = (jobKey, resumeId) => `${TYPES.TRANSACTION}:${jobKey}::${resumeId}`;
+export const jdGraphId = (jobKey) => `${TYPES.JDGRAPH}:${jobKey}`;
 export const normSkill = (s) => String(s || '').toLowerCase().trim();
 
 // ---- empty / default payloads ----
@@ -158,8 +164,46 @@ export function emptyJob(partial = {}) {
     notes: '',
     jdText: '',
     externalJobId: '',
+    jdExtract: null,   // compact survivor of a purged transaction: { topRequirements[], matchScore, summary }
+    appliedAt: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    ...partial,
+  };
+}
+
+// Transactions + JD graphs are EPHEMERAL (200-500 apps/day): TTL + purge on complete.
+export const TRANSACTION_TTL_MS = 48 * 60 * 60 * 1000; // 48h
+export const MAX_ACTIVE_TRANSACTIONS = 50;
+
+export function emptyTransaction(partial = {}) {
+  return {
+    jobKey: '',
+    jobId: '',
+    resumeId: '',
+    trackedJobId: '',                  // job:<uuid> row created at start (lineage)
+    mode: 'apply',                     // 'apply' | 'tailored'
+    status: 'open',                    // open | in_progress | submitted | abandoned
+    tailored: null,                    // { parsed, text } — transaction-scoped artifact
+    pages: [],                         // [{ url, stepLabel, seenAt, advancedAt }]
+    fieldAnswers: [],                  // [{ fieldId, page, label, type, value, source, needsUser }]
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    expiresAt: Date.now() + TRANSACTION_TTL_MS,
+    ...partial,
+  };
+}
+
+export function emptyJdGraph(jobKey, partial = {}) {
+  return {
+    jobKey,
+    requirements: [],                  // [{ category, text, normKey, importance, evidence }]
+    job: null,                         // extracted job fields (company/type/salary/…)
+    match: null,                       // { score, matched, missing } for the analyzed resume
+    resumeId: '',                      // resume the match/analysis was computed against
+    analysis: null,                    // { summary, mustHave, goodToHave }
+    builtAt: Date.now(),
+    expiresAt: Date.now() + TRANSACTION_TTL_MS,
     ...partial,
   };
 }
@@ -198,17 +242,25 @@ export const FIELDS = Object.freeze({
   [TYPES.JOB]: [
     'date', 'company', 'role', 'type', 'status', 'sponsorship', 'everify',
     'followup', 'referral', 'url', 'location', 'salary', 'datePosted', 'source',
-    'notes', 'jdText', 'externalJobId', 'createdAt', 'updatedAt',
+    'notes', 'jdText', 'externalJobId', 'jdExtract', 'appliedAt', 'createdAt', 'updatedAt',
   ],
   [TYPES.ANSWER]: ['question', 'answer', 'patterns', 'type', 'useCount'],
   [TYPES.EMAIL]: [
-    'jobId', 'to', 'subject', 'body', 'provider', 'status',
-    'gmailId', 'sentAt', 'createdAt', 'error',
+    'jobId', 'to', 'toName', 'subject', 'body', 'provider', 'status',
+    'gmailId', 'sentAt', 'createdAt', 'error', 'resumeId', 'attached', 'beaconId',
+    'jobsimp',
   ],
   [TYPES.SETTINGS]: [
     'provider', 'model', 'gmail', 'emailTemplate', 'onboarded', 'widgetResumeId',
   ],
   [TYPES.SECRETS]: ['llmKeys', 'accessToken', 'expiresAt', 'sessionExpiresAt'],
+  [TYPES.TRANSACTION]: [
+    'jobKey', 'jobId', 'resumeId', 'trackedJobId', 'mode', 'status', 'tailored',
+    'pages', 'fieldAnswers', 'createdAt', 'updatedAt', 'expiresAt',
+  ],
+  [TYPES.JDGRAPH]: [
+    'jobKey', 'requirements', 'job', 'match', 'resumeId', 'analysis', 'builtAt', 'expiresAt',
+  ],
 });
 
 export function pickFields(type, obj = {}) {

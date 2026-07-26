@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
   "name": "JobSimp — Job Application Copilot",
-  "version": "0.1.0",
+  "version": "0.1.8",
   "description": "Google-login job copilot: track applications, AI-parsed multi-resume autofill, JD match scoring, AI outreach emails via Gmail.",
-  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation"],
+  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation", "declarativeNetRequest"],
   "host_permissions": [
+    "https://api-galzsvftoq-uc.a.run.app/*",
+    "https://mail.google.com/*",
+    "https://outlook.live.com/*",
+    "https://outlook.office.com/*",
+    "https://outlook.office365.com/*",
+    "https://mail.yahoo.com/*",
     "https://*.googleapis.com/*",
+    "https://generativelanguage.googleapis.com/*",
     "https://accounts.google.com/*",
     "https://api.anthropic.com/*",
     "https://api.openai.com/*",
@@ -90,7 +97,7 @@
   "background": { "service_worker": "src/background/service-worker.js", "type": "module" },
   "action": { "default_popup": "src/component/popup/popup.html", "default_title": "JobSimp" },
   "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';" },
-  "options_page": "src/component/dashboard/settings.html",
+  "options_page": "src/component/dashboard/options.html",
   "content_scripts": [
     {
       "matches": [
@@ -167,6 +174,17 @@
       ],
       "js": ["src/content/bootstrap.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://mail.google.com/*",
+        "https://outlook.live.com/*",
+        "https://outlook.office.com/*",
+        "https://outlook.office365.com/*",
+        "https://mail.yahoo.com/*"
+      ],
+      "js": ["src/content/mail-bootstrap.js"],
+      "run_at": "document_start"
     }
   ],
   "oauth2": {
@@ -180,11 +198,13 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "src/component/dashboard/dashboard.html",
         "src/component/onboarding/onboarding.html",
         "src/component/widget/*",
+        "src/component/mail-track/*",
+        "src/component/mail-track/providers/*",
         "src/service/scraper.js",
         "src/service/autofill.js",
+        "src/service/beacon.js",
         "src/static/jobUrl.js"
       ],
       "matches": ["<all_urls>"]

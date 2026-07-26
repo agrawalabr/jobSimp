@@ -92,7 +92,21 @@ export async function startWidget() {
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = badgeMarkup + panelMarkup;
   const el = (id) => root.getElementById(id);
-  (document.documentElement || document).appendChild(host); // document_start: <html> exists, <body> may not yet
+
+  // MOUNT SURVIVAL — Next.js-style apps (new Greenhouse boards) hydrate the whole
+  // <html>. A foreign node injected pre-hydration triggers React #423 and the
+  // recovery re-render WIPES it. Two defenses:
+  //  1. attach only after the page has loaded + a settle delay (don't cause #423)
+  //  2. a watchdog re-mounts the host if the page ever removes it (win anyway)
+  // The shadow root works while detached, so all el() logic runs regardless.
+  const mount = () => {
+    if (host.isConnected) return;
+    (document.body || document.documentElement || document).appendChild(host);
+    if (panelOpen()) requestAnimationFrame(applyPush);
+  };
+  if (document.readyState === 'complete') setTimeout(mount, 300);
+  else window.addEventListener('load', () => setTimeout(mount, 300), { once: true });
+  setInterval(() => { if (!dead && !host.isConnected) mount(); }, 1000);
 
   let currentJD = null;
   let resumes = [];
@@ -110,6 +124,8 @@ export async function startWidget() {
   let dismissedUrl = null; // user closed the panel on this URL → don't auto-reopen
   let view = 'none';       // decideView(url): 'panel' | 'badge' | 'none'
   let pushListening = false;
+  let applying = null;     // active application: { jobKey, resumeId, mode } | null
+  let hostNavBtn = null;   // the page's own next/continue button we mirror
 
   const stopDiscoveryTimer = () => { clearTimeout(waitTimer); waitTimer = null; };
   const panelOpen = () => !!el('panel')?.classList.contains('open');
@@ -436,6 +452,7 @@ export async function startWidget() {
 
   /** Apply analysis payload to the panel. Does not touch status — callers set that. */
   function applyAnalysis(d) {
+    if (applying) return; // application mode owns the panel
     applyBackfill(d.job);
     if (d.match) renderScore(d.match);
     renderAnalysis(d.analysis);
@@ -444,6 +461,7 @@ export async function startWidget() {
 
   // ---- AI analysis: session by jobId → SW cache → LLM ----
   async function runAnalysis({ force = false } = {}) {
+    if (applying) return; // mid-transaction: the panel is in application mode, never analysis
     if (!currentJD) return;
     const r = currentResume();
     if (!r) { setStatus('Pick a parsed resume to analyze.', 'warn'); return; }
@@ -595,6 +613,16 @@ export async function startWidget() {
     const u = pageUrl();
     if (u === lastUrl) return;
     lastUrl = u;
+    // Mid-application navigation = the next page of the same flow. Keep the
+    // application UI; detect the submitted page, otherwise harvest+fill again.
+    if (applying) {
+      fillBusy = false; // any in-flight page fill died with the old page
+      setTimeout(async () => {
+        if (!applying) return;
+        if (!(await checkSubmitted())) fillCurrentPage();
+      }, 1200);
+      return;
+    }
     discoveryCache.delete(u);
     currentJD = null;
     dismissedUrl = null;
@@ -653,32 +681,137 @@ export async function startWidget() {
     else setStatus(summarizeError(res?.error), 'err');
   };
 
+  // ---- application mode (phase 2): consolidated Q&A + single mirrored nav button ----
+  const NAV_RE = /^\s*(next|continue|save and continue|save & continue|review|next step|proceed|apply|submit application|submit|easy apply|review your application)\s*$/i;
+  const SUBMITTED_RE = /(thank you for applying|application (has been |was )?(submitted|received|sent)|successfully (submitted|applied))/i;
+
+  function findHostNav() {
+    return [...document.querySelectorAll('button, input[type=submit], [role=button]')]
+      .filter((b) => b.offsetParent !== null && !b.disabled)
+      .find((b) => NAV_RE.test((b.textContent || b.value || '').replace(/\s+/g, ' ').trim())) || null;
+  }
+
+  function setApplyUI(on) {
+    el('applyRow').style.display = on ? 'none' : 'grid';
+    el('applyBox').style.display = on ? 'block' : 'none';
+    el('navBtn').style.display = 'none';
+    if (on) {
+      el('matchBox').style.display = 'none';
+      el('analysisBox').style.display = 'none';
+      el('analyzeBtn').style.display = 'none';
+      document.addEventListener('click', onHostClick, true);
+    } else {
+      el('qaList').innerHTML = '';
+      hostNavBtn = null;
+      document.removeEventListener('click', onHostClick, true);
+    }
+  }
+
+  // ANY host save/continue/next click during a transaction refreshes our panel:
+  // advance the lineage, then (same-URL SPA steps) re-harvest; URL changes are
+  // handled by onUrlChange. fillBusy dedupes ours-vs-host double triggers.
+  let fillBusy = false;
+  function onHostClick(e) {
+    if (!applying) return;
+    const btn = e.composedPath?.().find?.((n) => n?.matches?.('button, input[type=submit], [role=button]'))
+      || e.target?.closest?.('button, input[type=submit], [role=button]');
+    if (!btn || host.contains(btn)) return; // not a button / our own panel
+    if (!NAV_RE.test((btn.textContent || btn.value || '').replace(/\s+/g, ' ').trim())) return;
+    send('application.advance', { ...applying, url: pageUrl() });
+    const before = pageUrl();
+    setTimeout(async () => {
+      if (!applying || fillBusy || pageUrl() !== before) return;
+      if (!(await checkSubmitted())) fillCurrentPage();
+    }, 1500);
+  }
+
+  const SRC_LABEL = { profile: 'you', qa: 'saved', llm: 'AI', prior: 'earlier', file: 'file' };
+  function renderQa(answers = []) {
+    el('qaList').innerHTML = answers.map((a) => {
+      const src = a.needsUser ? '' : `<span class="src ${esc(a.source)}">${esc(SRC_LABEL[a.source] || a.source)}</span>`;
+      const val = a.needsUser ? 'fill this one manually' : a.value;
+      return `<li class="${a.needsUser ? 'todo' : ''}"><span class="q">${esc(a.label)}${src}</span><span class="a">${esc(val)}</span></li>`;
+    }).join('') || '<li class="muted">No form fields on this page.</li>';
+  }
+
+  /** Fill the current page (used for page 1 and every advance). */
+  async function fillCurrentPage() {
+    if (!applying || fillBusy) return;
+    fillBusy = true;
+    setStatus('Reading this page…', 'busy');
+    el('skeleton').style.display = 'block';
+    const res = await send('autofill.here', {});
+    if (!res?.ok) { fillBusy = false; el('skeleton').style.display = 'none'; setStatus(summarizeError(res?.error), 'err'); }
+  }
+
   async function runApply(mode) {
     if (!alive()) { kill(); return; }
-    if (activeResumeId) await send('resumes.select', { id: activeResumeId });
-    setStatus(mode === 'tailored' ? 'Preparing tailored apply…' : 'Filling application…', 'busy');
-    const res = await send('autofill.here', { tailored: mode === 'tailored' });
-    if (!res?.ok) setStatus(summarizeError(res?.error), 'err');
+    if (!currentJD) { setStatus('No job detected on this page yet.', 'warn'); return; }
+    const r = currentResume();
+    if (!r) { setStatus('Pick a parsed resume first.', 'warn'); return; }
+    await send('resumes.select', { id: r.id });
+
+    setStatus(mode === 'tailored' ? 'Tailoring resume for this job…' : 'Starting application…', 'busy');
+    const res = await send('application.start', { jd: currentJD, resumeId: r.id, mode });
+    if (!res?.ok) { setStatus(summarizeError(res?.error), 'err'); return; }
+    if (res.data?.alreadyApplied) { setStatus('You already applied to this job.', 'warn'); return; }
+
+    applying = { jobKey: res.data.jobKey, resumeId: res.data.resumeId, mode };
+    setApplyUI(true);
+    fillCurrentPage();
   }
-  el('autofillBtn').onclick = () => runApply('simple');
+  el('autofillBtn').onclick = () => runApply('apply');
   el('tailoredApplyBtn').onclick = () => runApply('tailored');
+
+  // Mirrored button: clicking it clicks the HOST's next/continue. The user always
+  // triggers navigation/submission — we never auto-click. The synthetic click
+  // bubbles through onHostClick, which advances the lineage and schedules re-fill.
+  el('navBtn').onclick = () => {
+    if (!applying) return;
+    (hostNavBtn && hostNavBtn.isConnected ? hostNavBtn : findHostNav())?.click();
+  };
+
+  function onApplyPageResult(p) {
+    fillBusy = false;
+    el('skeleton').style.display = 'none';
+    if (p.error) { setStatus(summarizeError(p.error), 'err'); return; }
+    renderQa(p.answers);
+    hostNavBtn = findHostNav();
+    const label = p.nextLabel || (hostNavBtn ? (hostNavBtn.textContent || hostNavBtn.value || '').trim() : '');
+    const nav = el('navBtn');
+    if (label) { nav.textContent = label; nav.style.display = 'block'; }
+    else nav.style.display = 'none';
+    const todo = (p.answers || []).filter((a) => a.needsUser).length;
+    setStatus(
+      todo
+        ? `Filled ${p.filled} field${p.filled === 1 ? '' : 's'} — ${todo} need${todo === 1 ? 's' : ''} you. Review, then continue.`
+        : `Filled ${p.filled} field${p.filled === 1 ? '' : 's'}. Review, then continue.`,
+      todo ? 'warn' : 'ok',
+    );
+  }
+
+  /** Submitted page → finalize: job saved w/ extract, ephemeral data purged. */
+  async function checkSubmitted() {
+    if (!applying) return false;
+    if (!SUBMITTED_RE.test((document.body?.innerText || '').slice(0, 4000))) return false;
+    const done = { ...applying };
+    applying = null;
+    await send('application.complete', done);
+    setApplyUI(false);
+    setStatus('Application submitted — saved to your dashboard. 🎉', 'ok');
+    return true;
+  }
 
   try {
     chrome.runtime.onMessage.addListener((m) => {
       if (!alive()) { kill(); return; }
       if (m?.type === '__autofill_result') {
-        const { filled, unmatched } = m.payload || {};
-        if (!filled) {
-          setStatus('No fields filled — open the application form and try again.', 'warn');
-          return;
+        if (applying) onApplyPageResult(m.payload || {});
+        else {
+          const { filled, error } = m.payload || {};
+          if (error) setStatus(summarizeError(error), 'err');
+          else setStatus(filled ? `Filled ${filled} field${filled === 1 ? '' : 's'}.` : 'No fields filled on this page.', filled ? 'ok' : 'warn');
         }
-        const miss = Array.isArray(unmatched) && unmatched.length
-          ? ` Missing: ${unmatched.slice(0, 4).join(', ')}${unmatched.length > 4 ? '…' : ''}.`
-          : '';
-        setStatus(
-          `Filled ${filled} field${filled === 1 ? '' : 's'}.${miss}`,
-          miss ? 'warn' : 'ok',
-        );
       }
     });
   } catch { kill(); return; }
@@ -693,4 +826,18 @@ export async function startWidget() {
   // We only build on job URLs (gated above). Decide per-URL: posting → open panel,
   // job listing/search → badge only.
   applyView();
+
+  // Rehydrate a mid-flight application after a full page reload: the SW still holds
+  // this tab's context and the transaction row has every earlier answer.
+  (async () => {
+    const res = await send('application.context');
+    const ctx = res?.data;
+    if (!ctx?.jobKey || applying) return;
+    applying = { jobKey: ctx.jobKey, resumeId: ctx.resumeId, mode: ctx.mode || 'apply' };
+    openPanel();
+    await bootstrap();
+    fillResumeSelect();
+    setApplyUI(true);
+    setTimeout(async () => { if (applying && !(await checkSubmitted())) fillCurrentPage(); }, 1200);
+  })();
 }

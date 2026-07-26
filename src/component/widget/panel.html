@@ -80,6 +80,19 @@ ul.clean li.muted{color:#8b95ab;border:none}
 .skel{background:linear-gradient(90deg,#1a2233 25%,#243049 37%,#1a2233 63%);background-size:400% 100%;
   animation:sk 1.2s ease infinite;border-radius:6px;height:12px;margin:8px 0}
 @keyframes sk{0%{background-position:100% 0}100%{background-position:-100% 0}}
+/* ---- application mode (phase 2): consolidated Q&A + single mirrored nav button ---- */
+ul.qa{list-style:none;margin:6px 0 0;padding:0;max-height:45vh;overflow-y:auto}
+ul.qa li{padding:5px 6px;border-bottom:1px solid #1c2434;font-size:11px;line-height:1.35}
+ul.qa .q{color:#8b95ab;display:block}
+ul.qa .a{color:#e8ecf4;font-weight:600;word-break:break-word;white-space:pre-wrap}
+ul.qa li.todo .a{color:#e8b13f;font-weight:400;font-style:italic}
+.src{font-size:8px;text-transform:uppercase;letter-spacing:.4px;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:1px}
+.src.profile{background:#14261c;color:#6fe89a}
+.src.qa{background:#141c2c;color:#7db4f0}
+.src.llm{background:#221a33;color:#b48cf0}
+.src.prior{background:#2a2210;color:#e8b13f}
+.src.file{background:#1f2a3a;color:#9db9dd}
+#navBtn{display:none;font-weight:700}
 </style>
 <div class="panel" id="panel">
   <div class="hd">
@@ -98,7 +111,6 @@ ul.clean li.muted{color:#8b95ab;border:none}
     <div id="main" style="display:none">
       <div class="sect" id="jobCard" style="display:none">
         <div class="role" id="jd_role">—</div>
-        <div class="company" id="jd_company"></div>
         <div class="company" id="jd_company"></div>
         <div class="meta" id="jd_meta"></div>
         <div class="role-row">
@@ -130,13 +142,19 @@ ul.clean li.muted{color:#8b95ab;border:none}
           </svg>
         </button>
       </div>
-      <div class="apply-row">
+      <div class="apply-row" id="applyRow">
         <button id="autofillBtn" type="button">Apply</button>
         <button class="primary" id="tailoredApplyBtn" type="button">✨ Tailor & Apply</button>
       </div>
+      <button class="primary" id="navBtn" type="button">Continue</button>
       <div class="status" id="status" role="status" aria-live="polite"></div>
       <div id="skeleton" style="display:none">
         <div class="skel" style="width:80%"></div><div class="skel" style="width:95%"></div><div class="skel" style="width:70%"></div>
+      </div>
+
+      <div id="applyBox" style="display:none">
+        <div class="lbl">Application questions</div>
+        <ul class="qa" id="qaList"></ul>
       </div>
 
       <div id="matchBox" style="display:none">

@@ -19,6 +19,7 @@ export class Job {
       date: job.date || existing?.date || new Date().toISOString().slice(0, 10),
       company: job.company ?? existing?.company ?? '',
       role: job.role ?? existing?.role ?? '',
+      type: job.type || existing?.type || 'Unknown',
       status: job.status || existing?.status || 'To Apply',
       sponsorship: job.sponsorship || existing?.sponsorship || 'Unknown',
       everify: job.everify || existing?.everify || 'Unknown',
@@ -31,6 +32,8 @@ export class Job {
       notes: job.notes ?? existing?.notes ?? '',
       jdText: job.jdText ?? existing?.jdText ?? '',
       externalJobId: job.externalJobId || job.jobId || existing?.externalJobId || '',
+      jdExtract: job.jdExtract ?? existing?.jdExtract ?? null,
+      appliedAt: job.appliedAt ?? existing?.appliedAt ?? null,
       createdAt: job.createdAt || existing?.createdAt || now,
       updatedAt: now,
     });

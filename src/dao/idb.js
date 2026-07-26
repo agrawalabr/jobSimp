@@ -6,7 +6,7 @@ import {
 import { defaultModelFor } from '../static/models.js';
 
 export const DB_NAME = 'jobsimp-graph';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4; // v4: + transaction, jdgraph stores (ephemeral, TTL)
 
 let _db = null;
 /** @type {Promise<IDBDatabase>|null} */
@@ -30,6 +30,8 @@ function inferType(id) {
   if (String(id).startsWith(`${TYPES.JOB}:`)) return TYPES.JOB;
   if (String(id).startsWith(`${TYPES.ANSWER}:`)) return TYPES.ANSWER;
   if (String(id).startsWith(`${TYPES.EMAIL}:`)) return TYPES.EMAIL;
+  if (String(id).startsWith(`${TYPES.TRANSACTION}:`)) return TYPES.TRANSACTION;
+  if (String(id).startsWith(`${TYPES.JDGRAPH}:`)) return TYPES.JDGRAPH;
   return TYPES.DISCOVERED;
 }
 
@@ -202,6 +204,19 @@ export async function listByType(type) {
     const { id, ...rest } = rec;
     return { id, type, ...rest };
   });
+}
+
+/**
+ * Delete expired rows (expiresAt < now) from a TTL store.
+ * Cheap full scan — ephemeral stores are capped small by design.
+ * @returns {Promise<number>} rows deleted
+ */
+export async function purgeExpired(type) {
+  const now = Date.now();
+  const rows = await listByType(type);
+  const dead = rows.filter((r) => r.expiresAt && r.expiresAt < now);
+  for (const r of dead) await deleteEntity(r.id, type);
+  return dead.length;
 }
 
 export async function ensureSingleton(fixedId, type, factory) {

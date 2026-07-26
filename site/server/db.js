@@ -1,20 +1,40 @@
 /**
- * Beacon store selector.
- * - Local / default: SQLite (zero setup)
- * - Prod (Firebase): BEACON_STORE=firestore + FIREBASE_PROJECT_ID
- *
- * Firestore (atomic increment) is the prod store. Do not use SQLite on
- * Cloud Functions — ephemeral disk and no shared state across instances.
+ * Beacon model facade: store selector + shared payload/filter helpers.
+ * Local: sqlite | Prod: firestore (set by Cloud Functions).
  */
-const storeName = (process.env.BEACON_STORE || 'sqlite').toLowerCase();
 
-let store;
-if (storeName === 'firestore') {
-  store = require('./db.firestore').createFirestoreStore();
-} else {
-  store = require('./db.sqlite');
+function toPayload(id, data) {
+  if (!data) return null;
+  return {
+    id,
+    count: data.count || 0,
+    meta: data.meta || {},
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null,
+    lastHitAt: data.lastHitAt || null,
+  };
 }
 
-console.log(`[beacon] store=${store.name}`);
+/** AND across provided criteria: id, meta.to contains email, meta.from equals. */
+function matchesFilter(doc, filter) {
+  if (!doc) return false;
+  if (filter.id != null && doc.id !== filter.id) return false;
+  const m = doc.meta || {};
+  if (filter.from != null) {
+    if (String(m.from || '').toLowerCase() !== filter.from) return false;
+  }
+  if (filter.to != null) {
+    const list = Array.isArray(m.to) ? m.to : [];
+    if (!list.some((e) => String(e).toLowerCase() === filter.to)) return false;
+  }
+  return true;
+}
 
-module.exports = store;
+const helpers = { toPayload, matchesFilter };
+const storeName = (process.env.BEACON_STORE || 'sqlite').toLowerCase();
+const store = storeName === 'firestore'
+  ? require('./db.firestore').create(helpers)
+  : require('./db.sqlite').create(helpers);
+
+console.log(`[beacon] store=${store.name}`);
+module.exports = Object.assign(store, helpers);
