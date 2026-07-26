@@ -3,25 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "JobSimp launch site + public email open-tracking beacon",
-  "proxy": "http://localhost:8787",
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "firebase-admin": "^13.10.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-scripts": "5.0.1"
   },
-  "devDependencies": {
-    "concurrently": "^9.1.2"
-  },
   "scripts": {
-    "start": "concurrently -k -n api,web -c teal,yellow \"npm run server\" \"npm run client\"",
-    "client": "react-scripts start",
-    "server": "node server/index.js",
+    "start": "react-scripts start",
     "build": "react-scripts build",
-    "start:prod": "NODE_ENV=production node server/index.js",
     "deploy": "npm run build && firebase deploy --only hosting,functions,firestore"
   },
   "eslintConfig": {

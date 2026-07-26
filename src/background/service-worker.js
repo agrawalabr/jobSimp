@@ -18,6 +18,7 @@ import {
 import { identityContext } from '../service/identity.js';
 import {
   ensureBeacon, trackBeacon, registerBeacon, resetBeacon, pixelHtml, extractBeaconId,
+  listPixels, createPixel,
 } from '../service/beacon.js';
 import { JD_ANALYSIS_PROMPT } from '../static/prompts.js';
 import { isJobUrl, jobCacheKey, extractJobId, JD_TEXT_LIMIT } from '../static/jobUrl.js';
@@ -105,9 +106,6 @@ async function setSentBeaconGate(tabId, enabled) {
   }
   try {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6d61a9'},body:JSON.stringify({sessionId:'6d61a9',runId:'post-fix',hypothesisId:'H1',location:'service-worker.js:setSentBeaconGate',message:'DNR sent gate',data:{tabId,enabled,ruleId:sentGateRuleByTab.get(tabId)||null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   } catch (e) {
     console.warn('[beacon] sent DNR gate failed', e?.message || e);
   }
@@ -262,6 +260,8 @@ const handlers = {
   },
   'beacon.ensure': (p) => ensureBeacon({ id: p?.id, meta: p?.meta }),
   'beacon.register': (p) => registerBeacon({ id: p?.id, meta: p?.meta }),
+  'beacon.create': (p) => createPixel(p),
+  'beacon.list': (p) => listPixels({ from: p?.from || p?.meta?.from }),
   'beacon.reset': (p) => resetBeacon(p?.id),
   'beacon.track': (p) => trackBeacon(p?.id),
   'beacon.pixelHtml': (p) => ({ html: pixelHtml(p?.id), id: p?.id || '' }),

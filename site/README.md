@@ -6,22 +6,16 @@ Launch website for JobSimp and the **public open-tracking beacon** used by outre
 
 | Layer | File | Role |
 |---|---|---|
-| Router | `server/index.js` | Bootstrap, middleware, route table |
-| Controller + View | `server/controller.js` | Validators, `{ msg, data }` envelope, handlers |
-| Model facade | `server/db.js` | Store selector + `toPayload` / `matchesFilter` |
-| Model | `server/db.sqlite.js` | Local SQLite store |
-| Model | `server/db.firestore.js` | Prod Firestore store |
+| Router | `functions/server/index.js` | Bootstrap, middleware, route table |
+| Controller + View | `functions/server/controller.js` | Validators, `{ msg, data }` envelope, handlers |
+| Model facade | `functions/server/db.js` | Shared helpers |
+| Model | `functions/server/db.firestore.js` | Firestore store |
 
-Also: `src/` launch page, `functions/` Cloud Function wrapper + `sync:server`, `firestore.rules` deny-all clients.
+Also: `src/` launch page, `functions/index.js` Cloud Function wrapper, `firestore.rules` deny-all clients.
 
 ## Beacon storage
 
-| Env | Store | Notes |
-|---|---|---|
-| **Local** | SQLite (`BEACON_STORE=sqlite`, default) | Zero setup; file at `data/beacon.sqlite` |
-| **Firebase prod** | **Firestore** (`BEACON_STORE=firestore`) | Set by Cloud Function; atomic `increment` |
-
-Do **not** put a `.sqlite` file on Cloud Functions — ephemeral disk / no shared state.
+**Firestore** (`beacons/{id}`) via Admin SDK — atomic `increment` on pixel hits. Client rules deny-all.
 
 Optional (recommended in prod): set `BEACON_API_KEY` so JSON routes require `Authorization: Bearer <key>` or `X-Beacon-Key`. The tracking **pixel GIF stays public**.
 
@@ -30,11 +24,16 @@ Optional (recommended in prod): set `BEACON_API_KEY` so JSON routes require `Aut
 ```bash
 cd site
 npm ci          # first time
-npm start
+npm start       # launch UI → http://localhost:3000
 ```
 
-- Launch UI: http://localhost:3000 (CRA; proxied to the beacon server)
-- Beacon API: http://localhost:8787
+Beacon API locally via emulator:
+
+```bash
+cd site/functions
+npm ci
+npm run serve
+```
 
 ## Beacon API (v1)
 
@@ -44,7 +43,7 @@ Strict surface only. Any other `/v1/api/beacon/*` → `{ "msg": "Not found", "da
 |---|---|---|---|
 | `POST` | `/v1/api/beacon/pixel` | optional key | Create (`count` must be `0`) |
 | `GET` | `/v1/api/beacon/pixel/<id>.gif` | **public** | Hit + 1×1 GIF |
-| `GET` | `/v1/api/beacon/pixels` | optional key | List by filter JSON body |
+| `POST` | `/v1/api/beacon/pixels` | optional key | List by filter JSON body |
 | `PUT` | `/v1/api/beacon/pixel/<id>` | optional key | Reset `count = 0` |
 | `DELETE` | `/v1/api/beacon/pixels` | optional key | Delete by filter JSON body |
 
@@ -59,7 +58,7 @@ Strict surface only. Any other `/v1/api/beacon/*` → `{ "msg": "Not found", "da
 | Route | Success `data` | Fail `data` |
 |---|---|---|
 | `POST /pixel` | `[{ doc }]` | `[]` |
-| `GET /pixels` | `[{ doc1 }, …]` | `[]` |
+| `POST /pixels` | `[{ doc1 }, …]` | `[]` |
 | `PUT /pixel/:id` | `[{ doc }]` | `[]` |
 | `DELETE /pixels` | `[{ doc1 }, …]` (pre-delete) | `[]` |
 
@@ -109,7 +108,7 @@ Content-Type: application/json
 { "msg": "success", "data": [{ "id": "…", "count": 0, "meta": { … }, "createdAt": "…", "updatedAt": "…", "lastHitAt": null }] }
 ```
 
-Uses Firestore/SQLite **set/INSERT by id** (not auto-id `add()`). `409` if id exists.
+Uses Firestore **set by id** (not auto-id `add()`). `409` if id exists.
 
 ### 2. Pixel (public)
 
@@ -123,8 +122,10 @@ Increments `count`, sets `lastHitAt`, returns a 1×1 GIF (always, even if missin
 
 Filter body — document-shaped subset only: `id` and/or `meta.to` / `meta.from` (single email strings). Criteria AND together.
 
+Filter must be a JSON body. Use **POST**, not GET — Cloud Run’s Google Frontend rejects GET with a body (`NGHTTP2_INTERNAL_ERROR` / 400).
+
 ```http
-GET /v1/api/beacon/pixels
+POST /v1/api/beacon/pixels
 Content-Type: application/json
 
 { "meta": { "to": "a@host.com" } }
@@ -179,13 +180,7 @@ firebase deploy --only hosting,functions,firestore
 ```
 
 1. **Hosting** → React `build/` + rewrite `/v1/api/**` → Cloud Function `api`
-2. **Cloud Function `api`** → Express (`BEACON_STORE=firestore`)
+2. **Cloud Function `api`** → Express (Firestore)
 3. **Firestore** → `beacons/{id}` (Admin SDK; client rules deny-all)
 
 CI (GitHub Actions) deploys **Hosting only** on merge/PR. Deploy Functions + Firestore when the API changes.
-
-```bash
-cd site
-npm run build
-npm run start:prod
-```

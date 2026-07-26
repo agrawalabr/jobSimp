@@ -1,33 +1,33 @@
-function create({ toPayload, matchesFilter }) {
-  const admin = require('firebase-admin');
+function create({toPayload, matchesFilter}) {
+  const admin = require("firebase-admin");
 
   if (!admin.apps.length) {
     const projectId = process.env.FIREBASE_PROJECT_ID;
     if (!projectId) {
-      throw new Error('FIREBASE_PROJECT_ID is required for BEACON_STORE=firestore');
+      throw new Error("FIREBASE_PROJECT_ID is required for Firestore");
     }
-    admin.initializeApp({ projectId });
+    admin.initializeApp({projectId});
   }
 
-  const col = admin.firestore().collection('beacons');
-  const { FieldValue } = admin.firestore;
+  const col = admin.firestore().collection("beacons");
+  const {FieldValue} = admin.firestore;
 
-  async function register({ id, meta }) {
+  async function register({id, meta}) {
     const ref = col.doc(id);
     const existing = await ref.get();
     if (existing.exists) {
-      const err = new Error(`Beacon already registered: ${id}`);
-      err.status = 409;
-      throw err;
+      const e = new Error(`Beacon already registered: ${id}`);
+      e.status = 409;
+      throw e;
     }
     const now = new Date().toISOString();
-    const data = { count: 0, meta, createdAt: now, updatedAt: now, lastHitAt: null };
+    const data = {count: 0, meta, createdAt: now, updatedAt: now, lastHitAt: null};
     await ref.set(data);
     return toPayload(id, data);
   }
 
   async function hit(id) {
-    const key = String(id || '').trim();
+    const key = String(id || "").trim();
     if (!key) return null;
     const now = new Date().toISOString();
     try {
@@ -36,10 +36,10 @@ function create({ toPayload, matchesFilter }) {
         updatedAt: now,
         lastHitAt: now,
       });
-      return { id: key };
+      return {id: key};
     } catch (err) {
-      if (err.code === 5 || err.code === 'not-found' ||
-          /not found|NOT_FOUND/i.test(err.message || '')) {
+      if (err.code === 5 || err.code === "not-found" ||
+          /not found|NOT_FOUND/i.test(err.message || "")) {
         return null;
       }
       throw err;
@@ -47,14 +47,14 @@ function create({ toPayload, matchesFilter }) {
   }
 
   async function reset(id) {
-    const key = String(id || '').replace(/\.gif$/i, '').trim();
+    const key = String(id || "").replace(/\.gif$/i, "").trim();
     if (!key) return null;
     const ref = col.doc(key);
     const snap = await ref.get();
     if (!snap.exists) return null;
     const now = new Date().toISOString();
-    await ref.update({ count: 0, updatedAt: now, lastHitAt: null });
-    return toPayload(key, { ...snap.data(), count: 0, updatedAt: now, lastHitAt: null });
+    await ref.update({count: 0, updatedAt: now, lastHitAt: null});
+    return toPayload(key, {...snap.data(), count: 0, updatedAt: now, lastHitAt: null});
   }
 
   async function list(filter) {
@@ -66,15 +66,15 @@ function create({ toPayload, matchesFilter }) {
     }
 
     if (filter.from == null && filter.to == null) return [];
-    // Prefer a single indexed predicate; AND the rest in matchesFilter (no composite index).
+    // Prefer a single indexed predicate; AND the rest in matchesFilter.
     let q = col;
-    if (filter.from != null) q = q.where('meta.from', '==', filter.from);
-    else q = q.where('meta.to', 'array-contains', filter.to);
+    if (filter.from != null) q = q.where("meta.from", "==", filter.from);
+    else q = q.where("meta.to", "array-contains", filter.to);
 
     const snap = await q.get();
     return snap.docs
-      .map((d) => toPayload(d.id, d.data()))
-      .filter((d) => matchesFilter(d, filter));
+        .map((d) => toPayload(d.id, d.data()))
+        .filter((d) => matchesFilter(d, filter));
   }
 
   async function remove(filter) {
@@ -86,7 +86,7 @@ function create({ toPayload, matchesFilter }) {
   }
 
   return {
-    name: 'firestore',
+    name: "firestore",
     register,
     hit,
     reset,
@@ -96,4 +96,4 @@ function create({ toPayload, matchesFilter }) {
   };
 }
 
-module.exports = { create };
+module.exports = {create};

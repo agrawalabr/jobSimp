@@ -1,6 +1,5 @@
 /**
- * Beacon model facade: store selector + shared payload/filter helpers.
- * Local: sqlite | Prod: firestore (set by Cloud Functions).
+ * Beacon model facade: Firestore store + shared payload/filter helpers.
  */
 
 function toPayload(id, data) {
@@ -21,7 +20,7 @@ function matchesFilter(doc, filter) {
   if (filter.id != null && doc.id !== filter.id) return false;
   const m = doc.meta || {};
   if (filter.from != null) {
-    if (String(m.from || '').toLowerCase() !== filter.from) return false;
+    if (String(m.from || "").toLowerCase() !== filter.from) return false;
   }
   if (filter.to != null) {
     const list = Array.isArray(m.to) ? m.to : [];
@@ -30,11 +29,8 @@ function matchesFilter(doc, filter) {
   return true;
 }
 
-const helpers = { toPayload, matchesFilter };
-const storeName = (process.env.BEACON_STORE || 'sqlite').toLowerCase();
-const store = storeName === 'firestore'
-  ? require('./db.firestore').create(helpers)
-  : require('./db.sqlite').create(helpers);
+const helpers = {toPayload, matchesFilter};
+const store = require("./db.firestore").create(helpers);
 
 console.log(`[beacon] store=${store.name}`);
 module.exports = Object.assign(store, helpers);

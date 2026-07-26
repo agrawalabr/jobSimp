@@ -2,9 +2,8 @@
   "name": "functions",
   "description": "JobSimp beacon API (Cloud Functions)",
   "scripts": {
-    "sync:server": "node scripts/sync-server.js",
     "lint": "eslint .",
-    "serve": "npm run sync:server && firebase emulators:start --only functions",
+    "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions --force",
     "logs": "firebase functions:log"
   },
