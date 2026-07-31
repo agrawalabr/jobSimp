@@ -1,0 +1,44 @@
+<div class="panel" id="tracker">
+  <div class="stats" id="stats"></div>
+  <div class="toolbar">
+    <button class="primary" id="addJob">+ Add Job</button>
+    <input type="search" id="q" placeholder="Search…">
+    <select id="fStatus"><option value="">All statuses</option></select>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Company</th><th>Role</th><th>Type</th><th>Status</th>
+      <th>Sponsor</th><th>E-Verify</th><th>Location</th><th>Salary</th>
+      <th>Follow-up</th><th>Referral</th><th>Actions</th>
+    </tr></thead>
+    <tbody id="jobRows"></tbody>
+  </table>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h2 id="modalTitle" style="font-size:16px;margin-bottom:14px;color:inherit">Add Job</h2>
+    <div class="grid2">
+      <div class="field"><label>Company *</label><input id="m_company"></div>
+      <div class="field"><label>Role *</label><input id="m_role"></div>
+      <div class="field"><label>Type</label><select id="m_type"></select></div>
+      <div class="field"><label>Date applied</label><input type="date" id="m_date"></div>
+      <div class="field"><label>Date posted</label><input type="date" id="m_datePosted"></div>
+      <div class="field"><label>Status</label><select id="m_status"></select></div>
+      <div class="field"><label>Sponsorship</label><select id="m_sponsorship"></select></div>
+      <div class="field"><label>E-Verify</label><select id="m_everify"></select></div>
+      <div class="field"><label>Follow-up date</label><input type="date" id="m_followup"></div>
+      <div class="field"><label>Referral</label><select id="m_referral"></select></div>
+      <div class="field"><label>Location</label><input id="m_location"></div>
+      <div class="field"><label>Salary</label><input id="m_salary"></div>
+    </div>
+    <div class="field"><label>URL</label><input id="m_url"></div>
+    <div class="field"><label>JD text (powers AI drafting)</label><textarea id="m_jd" rows="4"></textarea></div>
+    <div class="field"><label>Notes</label><textarea id="m_notes" rows="2"></textarea></div>
+    <div class="err" id="m_err"></div>
+    <div class="actions">
+      <button id="cancelBtn">Cancel</button>
+      <button class="primary" id="saveBtn">Save</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,75 @@
+<div class="panel" id="outreach">
+  <div id="composer">
+    <div class="grid2">
+      <div class="field"><label>Resume</label><select id="c_resume"></select></div>
+      <div class="field"><label>Job (JD used for drafting)</label><select id="c_job"></select></div>
+    </div>
+    <label class="check-row"><input type="checkbox" id="c_attach"> Attach resume to email</label>
+
+    <div class="field">
+      <label>Context (JD / comment / subprompt)</label>
+      <textarea id="c_context" rows="3" placeholder="Paste JD or a short note to tailor the email. Leave empty for a generic cold outreach."></textarea>
+    </div>
+
+    <div class="field">
+      <label>Recipients</label>
+      <div class="recipient-box" id="c_to_box">
+        <div class="recipient-chips" id="c_to_chips"></div>
+        <input id="c_to_input" type="text" placeholder="email@company.com · Name &lt;email@company.com&gt; · paste a whole list" autocomplete="off">
+      </div>
+      <div class="recipient-add-row">
+        <button type="button" class="small" id="c_to_add">Add</button>
+        <button type="button" class="small" id="c_to_clear">Clear all</button>
+        <span class="hint" id="c_to_hint" style="margin:0"></span>
+      </div>
+    </div>
+
+    <label class="check-row"><input type="checkbox" id="c_group"> Group email (one message to all)</label>
+    <div class="hint" id="c_sendMode" style="margin:-6px 0 10px"></div>
+
+    <div class="field">
+      <label>Tone (up to 3)</label>
+      <div class="tone-chips" id="c_tones"></div>
+    </div>
+
+    <div class="toolbar">
+      <button class="primary" id="draftBtn">✨ Write with AI</button>
+      <span class="hint" id="draftStatus"></span>
+    </div>
+
+    <div class="field"><label>Subject</label><input id="c_subject"></div>
+    <div class="field">
+      <div class="draft-head">
+        <label>Body</label>
+        <button type="button" class="icon-btn" id="regenBtn" title="Regenerate with AI" aria-label="Regenerate email">↻</button>
+      </div>
+      <div class="body-wrap" id="c_body_wrap">
+        <textarea id="c_body"></textarea>
+        <div class="draft-skel" id="c_body_skel" hidden aria-hidden="true">
+          <div class="skel-line w80"></div>
+          <div class="skel-line w95"></div>
+          <div class="skel-line w70"></div>
+          <div class="skel-line w90"></div>
+          <div class="skel-line w55"></div>
+          <div class="skel-pulse">Writing with AI…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Signature (appended when the email is sent)</label>
+      <textarea id="c_signature" rows="2" placeholder="Name&#10;Title · linkedin.com/in/… (leave empty → AI writes one)"></textarea>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="sendBtn" disabled>Send via Gmail</button>
+    </div>
+    <div class="sendres" id="sendres"></div>
+  </div>
+
+  <h3 style="margin:18px 0 10px;font-size:14px">Sent log</h3>
+  <table>
+    <thead><tr><th>Date</th><th>To</th><th>Subject</th><th>Job</th><th>Status</th></tr></thead>
+    <tbody id="emailRows"></tbody>
+  </table>
+</div>

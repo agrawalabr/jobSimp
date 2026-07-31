@@ -1,0 +1,39 @@
+<div class="panel" id="settings">
+  <h2>AI Provider</h2>
+  <div class="card">
+    <div class="grid2">
+      <div class="field"><label>Active provider</label><select id="ai_provider"></select></div>
+      <div class="field"><label>Model</label><select id="ai_model"></select></div>
+    </div>
+    <div class="hint" id="modelHint"></div>
+    <div class="hint" style="margin:6px 0 12px">Consumption: <b>light</b> → low → medium → high → <b>extra</b>. Prefer light/low for free-tier testing.</div>
+    <div id="keyFields"></div>
+    <div class="hint">Keys are stored locally in IndexedDB and sent only to the respective provider's API.</div>
+  </div>
+
+  <h2 class="section-gap">Email</h2>
+  <div class="card">
+    <div class="grid2">
+      <div class="field"><label>From name</label><input id="gmail_fromName" placeholder="Your name"></div>
+      <div class="field"><label>Email tone</label><input id="tmpl_tone" placeholder="concise, warm, confident"></div>
+    </div>
+    <div class="field"><label>Signature (appended to drafts)</label><textarea id="tmpl_signature" placeholder="Name&#10;Title · linkedin.com/in/…"></textarea></div>
+    <div class="hint">Sending uses Gmail via HTTPS Google OAuth. Requires a Web application OAuth client ID in manifest.json.</div>
+  </div>
+
+  <h2 class="section-gap">Q&amp;A Bank (autofill answers)</h2>
+  <div class="card">
+    <div class="grid3">
+      <div class="field"><label>Question / field label</label><input id="qa_question" placeholder="Why do you want to work here?"></div>
+      <div class="field"><label>Match patterns (comma sep)</label><input id="qa_patterns" placeholder="why do you want, motivation"></div>
+      <div class="field"><label>Answer</label><input id="qa_answer"></div>
+      <button class="primary" id="qa_add">Add</button>
+    </div>
+    <table><thead><tr><th>Question</th><th>Patterns</th><th>Answer</th><th></th></tr></thead><tbody id="qa_rows"></tbody></table>
+  </div>
+
+  <div class="actions" style="justify-content:flex-start;margin:20px 0 40px">
+    <button class="primary" id="saveAll" style="padding:12px 28px">Save settings</button>
+    <span id="saveMsg"></span>
+  </div>
+</div>

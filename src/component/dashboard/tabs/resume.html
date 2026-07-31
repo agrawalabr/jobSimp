@@ -1,0 +1,54 @@
+<div class="panel" id="resume">
+  <label class="upload-zone" id="dropZone" for="resumeFile">
+    <div class="uz-title">Drop PDF / DOCX / TXT or click to upload</div>
+    <div class="hint">Files stay in IndexedDB on this device.</div>
+    <input type="file" id="resumeFile" accept=".pdf,.docx,.txt,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple>
+  </label>
+
+  <div class="alt-row">
+    <div class="divider"></div>
+    <button type="button" class="ghost-btn" id="pasteBtn">Paste text instead</button>
+    <div class="divider"></div>
+  </div>
+
+  <div class="paste-box" id="pasteArea">
+    <div class="grid2">
+      <div class="field"><label>Name</label><input id="pasteName" placeholder="Pasted resume"></div>
+    </div>
+    <div class="field"><label>Resume text</label><textarea id="pasteText" rows="8" placeholder="Paste full resume text…"></textarea></div>
+    <div class="actions" style="justify-content:flex-start"><button class="primary" id="pasteSave">Save pasted resume</button></div>
+  </div>
+
+  <div class="err" id="resumeErr"></div>
+  <div class="section-label" id="resumeListLabel">Your resumes</div>
+  <div class="resume-list" id="resumeList"></div>
+
+  <div class="edit-panel" id="editPanel" style="display:none">
+    <h3>Edit parsed data <span id="editResumeName" style="color:var(--muted);font-weight:400"></span></h3>
+    <div class="grid2">
+      <div class="field"><label>Name</label><input id="ed_name"></div>
+      <div class="field"><label>Email</label><input id="ed_email"></div>
+      <div class="field"><label>Phone</label><input id="ed_phone"></div>
+      <div class="field"><label>Address</label><input id="ed_address"></div>
+      <div class="field"><label>LinkedIn</label><input id="ed_linkedin"></div>
+      <div class="field"><label>GitHub</label><input id="ed_github"></div>
+      <div class="field"><label>Portfolio</label><input id="ed_portfolio"></div>
+    </div>
+    <div class="field"><label>Summary</label><textarea id="ed_summary" rows="3"></textarea></div>
+    <div class="field">
+      <label>Skills</label>
+      <div class="skill-tags" id="ed_skills"></div>
+      <div class="add-skill-row">
+        <input id="ed_newSkill" placeholder="Add skill">
+        <button type="button" class="small" id="ed_addSkillBtn">Add</button>
+      </div>
+    </div>
+    <div class="field"><label>Full parsed JSON (advanced)</label><textarea id="ed_json" rows="10" style="font-family:ui-monospace,monospace;font-size:12px"></textarea></div>
+    <div class="err" id="ed_err"></div>
+    <div class="actions" style="justify-content:flex-start">
+      <button class="primary" id="ed_save">Save parsed</button>
+      <button type="button" id="ed_cancel">Cancel</button>
+      <span id="resumeMsg"></span>
+    </div>
+  </div>
+</div>

@@ -31,7 +31,33 @@ chrome.runtime?.onInstalled?.addListener(async (details) => {
   if (details.reason === 'install' || !s.onboarded) {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/component/onboarding/onboarding.html') });
   }
+  if (details.reason === 'update' || details.reason === 'install') {
+    await reloadGmailTabs('onInstalled:' + details.reason);
+  }
 });
+
+/** Kill zombie Gmail content scripts after an extension reload / version bump. */
+async function reloadGmailTabs(reason) {
+  try {
+    const ver = chrome.runtime.getManifest?.()?.version || '';
+    const key = 'mailTrackReloadedVersion';
+    const bag = await chrome.storage.local.get(key);
+    if (bag[key] === ver && reason.startsWith('boot')) return;
+    await chrome.storage.local.set({ [key]: ver });
+    const tabs = await chrome.tabs.query({ url: ['https://mail.google.com/*'] });
+    await Promise.all(
+      (tabs || []).map((t) => (t.id != null
+        ? chrome.tabs.reload(t.id).catch(() => {})
+        : Promise.resolve())),
+    );
+    console.info('[JobSimp] reloaded Gmail tabs after', reason, ver);
+  } catch (e) {
+    console.warn('[JobSimp] gmail tab reload failed', e?.message || e);
+  }
+}
+
+// Unpacked "Reload" restarts the SW; bump storage so Gmail tabs pick up new content scripts.
+reloadGmailTabs('boot').catch(() => {});
 
 chrome.alarms?.clear?.('jobsimp-poll');
 chrome.alarms?.clear?.('jobsimp-sync');
@@ -64,20 +90,18 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
   chrome.webNavigation.onReferenceFragmentUpdated?.addListener(onSpaNav);
 }
 
-// ---------- Sent-folder beacon GIF gate (DNR) ----------
-// Blocks direct browser loads of /beacon/pixel/*.gif while the tab is on Gmail Sent.
-// (JSON track GETs are not resourceType "image", so badges still work.)
-const sentGateRuleByTab = new Map(); // tabId → ruleId
-let sentGateNextId = 61001;
+// ---------- Gmail pixel GIF gate (DNR) ----------
+// Static ruleset (rules/beacon-pixel-gate.json) always blocks browser image loads of
+// /v1/api/beacon/pixel/* initiated by mail.google.com — race-free on hard refresh.
+// Session rules below are a belt-and-suspenders copy for the same tab (hash is NOT
+// available in webNavigation URLs, so we enable for every Gmail tab).
+const pixelGifGateByTab = new Map(); // tabId → ruleId
+let pixelGifGateNextId = 61001;
 
-function isGmailSentUrl(url) {
+function isGmailUrl(url) {
   try {
     const u = new URL(String(url || ''));
-    if (!/mail\.google\.com$/i.test(u.hostname) && !u.hostname.endsWith('.mail.google.com')) {
-      return false;
-    }
-    const h = decodeURIComponent(u.hash || '');
-    return /#sent\b/i.test(h) || /#label\/sent\b/i.test(h);
+    return /mail\.google\.com$/i.test(u.hostname) || u.hostname.endsWith('.mail.google.com');
   } catch {
     return false;
   }
@@ -85,40 +109,50 @@ function isGmailSentUrl(url) {
 
 async function setSentBeaconGate(tabId, enabled) {
   if (!chrome.declarativeNetRequest?.updateSessionRules || tabId == null) return;
-  const existing = sentGateRuleByTab.get(tabId);
+  const existing = pixelGifGateByTab.get(tabId);
   const removeRuleIds = existing != null ? [existing] : [];
   const addRules = [];
   if (enabled) {
-    const id = existing != null ? existing : sentGateNextId++;
-    sentGateRuleByTab.set(tabId, id);
+    const id = existing != null ? existing : pixelGifGateNextId++;
+    pixelGifGateByTab.set(tabId, id);
     addRules.push({
       id,
       priority: 1,
       action: { type: 'block' },
       condition: {
+        // Broader than *.gif — catch /pixel/<id> and /pixel/<id>.gif
         urlFilter: '||api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/',
         resourceTypes: ['image', 'other'],
         tabIds: [tabId],
       },
     });
   } else if (existing != null) {
-    sentGateRuleByTab.delete(tabId);
+    pixelGifGateByTab.delete(tabId);
   }
   try {
     await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
+    // #region agent log
+    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate',message:'session pixel GIF gate updated',data:{tabId,enabled:!!enabled,ruleId:pixelGifGateByTab.get(tabId)??null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   } catch (e) {
-    console.warn('[beacon] sent DNR gate failed', e?.message || e);
+    console.warn('[beacon] pixel GIF DNR gate failed', e?.message || e);
+    // #region agent log
+    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate:err',message:'session pixel GIF gate FAILED',data:{tabId,enabled:!!enabled,error:String(e&&e.message||e)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   }
 }
 
 function syncSentBeaconGateFromUrl(tabId, url) {
-  return setSentBeaconGate(tabId, isGmailSentUrl(url));
+  // webNavigation strips #hash — always arm on any Gmail tab; static ruleset covers the rest.
+  return setSentBeaconGate(tabId, isGmailUrl(url));
 }
 
 const onMailNav = (d) => {
   if (d.frameId !== 0 || !d.url || !/mail\.google\.com/i.test(d.url)) return;
   syncSentBeaconGateFromUrl(d.tabId, d.url);
 };
+// onBeforeNavigate arms before subresources; hash is still absent but Gmail-wide block is OK.
+chrome.webNavigation?.onBeforeNavigate?.addListener(onMailNav);
 chrome.webNavigation?.onCommitted?.addListener(onMailNav);
 chrome.webNavigation?.onHistoryStateUpdated?.addListener(onMailNav);
 chrome.webNavigation?.onReferenceFragmentUpdated?.addListener(onMailNav);

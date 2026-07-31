@@ -134,10 +134,30 @@ async function create(req, res) {
 }
 
 async function pixel(req, res) {
-  try {
-    await store.hit(beaconId(req.params.id));
-  } catch {
-    /* always return GIF */
+  // Count recipient opens; skip sender self-views in Gmail.
+  //
+  // Browsers NEVER send the URL hash in Referer, so we cannot match
+  // https://mail.google.com/mail/u/0/#sent/... literally. Self-views arrive as:
+  //   Referer: https://mail.google.com/  or  .../mail/u/0/
+  // Recipient opens in Gmail use Google Image Proxy (UA has GoogleImageProxy);
+  // those have no mail.google.com Referer and MUST still count.
+  const referer = String(req.get("referer") || req.get("referrer") || "");
+  const ua = String(req.get("user-agent") || "");
+
+  const isSelfGmailUi = /mail\.google\.com/i.test(referer);
+  const isRecipientGmailProxy = /GoogleImageProxy/i.test(ua)
+    || /\(via ggpht\.com\b/i.test(ua);
+
+  // Self (Sent / Draft / Compose / reading in Gmail tab) → skip.
+  // Recipient (Gmail proxy or other mail clients) → hit.
+  const shouldCount = isRecipientGmailProxy || !isSelfGmailUi;
+
+  if (shouldCount) {
+    try {
+      await store.hit(beaconId(req.params.id));
+    } catch {
+      /* always return GIF */
+    }
   }
   res.set({
     "Content-Type": "image/gif",
