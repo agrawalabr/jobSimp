@@ -9,3 +9,5 @@ env*
 test.js
 test/
 test.py
+
+_metadata/
