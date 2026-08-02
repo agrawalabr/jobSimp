@@ -1,0 +1,232 @@
+diff --git a/manifest.json b/manifest.json
+index 44376ff..8f090d1 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -3,16 +3,7 @@
+   "name": "JobSimp — Job Application Copilot",
+   "version": "0.1.9",
+   "description": "Google-login job copilot: track applications, AI-parsed multi-resume autofill, JD match scoring, AI outreach emails via Gmail.",
+-  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation", "declarativeNetRequest"],
+-  "declarative_net_request": {
+-    "rule_resources": [
+-      {
+-        "id": "beacon_pixel_gate",
+-        "enabled": true,
+-        "path": "rules/beacon-pixel-gate.json"
+-      }
+-    ]
+-  },
++  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation"],
+   "host_permissions": [
+     "https://api-galzsvftoq-uc.a.run.app/*",
+     "https://mail.google.com/*",
+diff --git a/rules/beacon-pixel-gate.json b/rules/beacon-pixel-gate.json
+deleted file mode 100644
+index b9de967..0000000
+--- a/rules/beacon-pixel-gate.json
++++ /dev/null
+@@ -1,11 +0,0 @@
+-[
+-  {
+-    "id": 1,
+-    "priority": 1,
+-    "action": { "type": "block" },
+-    "condition": {
+-      "urlFilter": "||api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/",
+-      "resourceTypes": ["image", "other"]
+-    }
+-  }
+-]
+diff --git a/site/functions/server/controller.js b/site/functions/server/controller.js
+index 27fddaf..ef0eef6 100644
+--- a/site/functions/server/controller.js
++++ b/site/functions/server/controller.js
+@@ -133,14 +133,27 @@ async function create(req, res) {
+   ok(res, 201, [await store.register(doc)]);
+ }
+ 
++// Suppress hits that land within this many ms of the beacon's registration
++// (createdAt, set at send time). Catches the Compose→Sent UI transition
++// re-rendering the just-sent message, independent of the referer signal.
++const SELF_VIEW_GRACE_MS = 8000;
++
+ async function pixel(req, res) {
+   // Count recipient opens; skip sender self-views in Gmail.
+   //
+   // Browsers NEVER send the URL hash in Referer, so we cannot match
+   // https://mail.google.com/mail/u/0/#sent/... literally. Self-views arrive as:
+   //   Referer: https://mail.google.com/  or  .../mail/u/0/
+-  // Recipient opens in Gmail use Google Image Proxy (UA has GoogleImageProxy);
+-  // those have no mail.google.com Referer and MUST still count.
++  //
++  // IMPORTANT: GoogleImageProxy UA is NOT a reliable "this is a real recipient"
++  // signal on its own — Gmail appears to route the sender's own Sent-folder
++  // render through the same proxy pipeline, so isRecipientGmailProxy can be
++  // true on a genuine self-view too. Do not let it override the referer check
++  // (a previous version used `isRecipientGmailProxy || !isSelfGmailUi`, which
++  // meant a self-view with a proxy UA was always counted — that was the bug
++  // causing every Sent-folder open to register as a hit). Referer is the only
++  // signal that actually reflects *whose browser initiated the render*, so it
++  // alone decides; UA is retained for diagnostics only.
+   const referer = String(req.get("referer") || req.get("referrer") || "");
+   const ua = String(req.get("user-agent") || "");
+ 
+@@ -148,13 +161,31 @@ async function pixel(req, res) {
+   const isRecipientGmailProxy = /GoogleImageProxy/i.test(ua)
+     || /\(via ggpht\.com\b/i.test(ua);
+ 
+-  // Self (Sent / Draft / Compose / reading in Gmail tab) → skip.
+-  // Recipient (Gmail proxy or other mail clients) → hit.
+-  const shouldCount = isRecipientGmailProxy || !isSelfGmailUi;
++  const id = beaconId(req.params.id);
++  let withinGraceWindow = false;
++  if (!isSelfGmailUi) {
++    try {
++      const [doc] = await store.list({id});
++      if (doc && doc.createdAt) {
++        const age = Date.now() - Date.parse(doc.createdAt);
++        withinGraceWindow = Number.isFinite(age) && age >= 0 && age < SELF_VIEW_GRACE_MS;
++      }
++    } catch {
++      /* if the lookup fails, fall through and count as usual */
++    }
++  }
++
++  const shouldCount = !isSelfGmailUi && !withinGraceWindow;
++
++  // Diagnostic log — cheap, and lets us confirm/adjust the heuristics against
++  // real traffic (Cloud Logging) without needing to reproduce locally.
++  console.log("[beacon] pixel hit", {
++    id, referer, ua, isSelfGmailUi, isRecipientGmailProxy, withinGraceWindow, shouldCount,
++  });
+ 
+   if (shouldCount) {
+     try {
+-      await store.hit(beaconId(req.params.id));
++      await store.hit(id);
+     } catch {
+       /* always return GIF */
+     }
+diff --git a/src/background/service-worker.js b/src/background/service-worker.js
+index e8201d6..a7a875d 100644
+--- a/src/background/service-worker.js
++++ b/src/background/service-worker.js
+@@ -90,76 +90,6 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
+   chrome.webNavigation.onReferenceFragmentUpdated?.addListener(onSpaNav);
+ }
+ 
+-// ---------- Gmail pixel GIF gate (DNR) ----------
+-// Static ruleset (rules/beacon-pixel-gate.json) always blocks browser image loads of
+-// /v1/api/beacon/pixel/* initiated by mail.google.com — race-free on hard refresh.
+-// Session rules below are a belt-and-suspenders copy for the same tab (hash is NOT
+-// available in webNavigation URLs, so we enable for every Gmail tab).
+-const pixelGifGateByTab = new Map(); // tabId → ruleId
+-let pixelGifGateNextId = 61001;
+-
+-function isGmailUrl(url) {
+-  try {
+-    const u = new URL(String(url || ''));
+-    return /mail\.google\.com$/i.test(u.hostname) || u.hostname.endsWith('.mail.google.com');
+-  } catch {
+-    return false;
+-  }
+-}
+-
+-async function setSentBeaconGate(tabId, enabled) {
+-  if (!chrome.declarativeNetRequest?.updateSessionRules || tabId == null) return;
+-  const existing = pixelGifGateByTab.get(tabId);
+-  const removeRuleIds = existing != null ? [existing] : [];
+-  const addRules = [];
+-  if (enabled) {
+-    const id = existing != null ? existing : pixelGifGateNextId++;
+-    pixelGifGateByTab.set(tabId, id);
+-    addRules.push({
+-      id,
+-      priority: 1,
+-      action: { type: 'block' },
+-      condition: {
+-        // Broader than *.gif — catch /pixel/<id> and /pixel/<id>.gif
+-        urlFilter: '||api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/',
+-        resourceTypes: ['image', 'other'],
+-        tabIds: [tabId],
+-      },
+-    });
+-  } else if (existing != null) {
+-    pixelGifGateByTab.delete(tabId);
+-  }
+-  try {
+-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
+-    // #region agent log
+-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate',message:'session pixel GIF gate updated',data:{tabId,enabled:!!enabled,ruleId:pixelGifGateByTab.get(tabId)??null},timestamp:Date.now()})}).catch(()=>{});
+-    // #endregion
+-  } catch (e) {
+-    console.warn('[beacon] pixel GIF DNR gate failed', e?.message || e);
+-    // #region agent log
+-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate:err',message:'session pixel GIF gate FAILED',data:{tabId,enabled:!!enabled,error:String(e&&e.message||e)},timestamp:Date.now()})}).catch(()=>{});
+-    // #endregion
+-  }
+-}
+-
+-function syncSentBeaconGateFromUrl(tabId, url) {
+-  // webNavigation strips #hash — always arm on any Gmail tab; static ruleset covers the rest.
+-  return setSentBeaconGate(tabId, isGmailUrl(url));
+-}
+-
+-const onMailNav = (d) => {
+-  if (d.frameId !== 0 || !d.url || !/mail\.google\.com/i.test(d.url)) return;
+-  syncSentBeaconGateFromUrl(d.tabId, d.url);
+-};
+-// onBeforeNavigate arms before subresources; hash is still absent but Gmail-wide block is OK.
+-chrome.webNavigation?.onBeforeNavigate?.addListener(onMailNav);
+-chrome.webNavigation?.onCommitted?.addListener(onMailNav);
+-chrome.webNavigation?.onHistoryStateUpdated?.addListener(onMailNav);
+-chrome.webNavigation?.onReferenceFragmentUpdated?.addListener(onMailNav);
+-chrome.tabs?.onRemoved?.addListener((tabId) => {
+-  setSentBeaconGate(tabId, false).catch(() => {});
+-});
+-
+ function removedStorage(name) {
+   throw new Error(`${name} removed. Use src/dao/ (IndexedDB jobsimp-graph).`);
+ }
+@@ -300,13 +230,6 @@ const handlers = {
+   'beacon.track': (p) => trackBeacon(p?.id),
+   'beacon.pixelHtml': (p) => ({ html: pixelHtml(p?.id), id: p?.id || '' }),
+   'beacon.extractId': (p) => extractBeaconId(p?.html || p?.body || ''),
+-  /** Content script: enable/disable Sent-folder GIF block for this tab. */
+-  'beacon.sentGate': async (p, _sender) => {
+-    const tabId = _sender?.tab?.id;
+-    if (tabId == null) return { ok: false };
+-    await setSentBeaconGate(tabId, !!p?.on);
+-    return { ok: true, on: !!p?.on };
+-  },
+   'discovered.list': () => discovered.get(),
+   'discovered.update': (p) => discovered.put(p),
+   'settings.get': () => getSettings(),
+diff --git a/src/component/mail-track/mail-track.js b/src/component/mail-track/mail-track.js
+index d35dd7e..56e73fa 100644
+--- a/src/component/mail-track/mail-track.js
++++ b/src/component/mail-track/mail-track.js
+@@ -21,7 +21,11 @@ const BTN_ATTR = 'data-jobsimp-compose-track';
+ 
+ /**
+  * document_start: no chrome.runtime messaging here.
+- * Pixel GIF blocking is the static DNR ruleset + SW webNavigation session rules.
++ * Self-view filtering happens server-side (see functions/server/controller.js
++ * pixel()) — no client-side network blocking is attempted; Gmail appears to
++ * route the sender's own Sent-folder render through the same image-proxy
++ * pipeline as recipient opens, so a client-side DNR rule has nothing to
++ * intercept for the case that actually matters.
+  * Messaging at document_start races extension reload and caused uncaught
+  * "Extension context invalidated" on hashchange from zombie scripts.
+  */
+@@ -742,10 +746,6 @@ async function onRoute() {
+   fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'C',location:'mail-track.js:onRoute',message:'onRoute',data:{hash:String(cur||'').slice(0,100),isSentList:isSentList(),isSentOpen:isSentOpen(),enterSentList,fromOpen,accountFrom:accountFrom()||null,hasCompose:hasCompose(),gateOn:shouldGatePixelGif()},timestamp:Date.now()})}).catch(()=>{});
+   // #endregion
+ 
+-  // Session DNR backup (static ruleset is primary). Ignore if extension was reloaded.
+-  if (extAlive()) {
+-    try { await send('beacon.sentGate', { on: true }); } catch { /* ignore */ }
+-  }
+   watchPixelLoads();
+ 
+   if (isSentList()) {

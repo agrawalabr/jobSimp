@@ -90,76 +90,6 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
   chrome.webNavigation.onReferenceFragmentUpdated?.addListener(onSpaNav);
 }
 
-// ---------- Gmail pixel GIF gate (DNR) ----------
-// Static ruleset (rules/beacon-pixel-gate.json) always blocks browser image loads of
-// /v1/api/beacon/pixel/* initiated by mail.google.com — race-free on hard refresh.
-// Session rules below are a belt-and-suspenders copy for the same tab (hash is NOT
-// available in webNavigation URLs, so we enable for every Gmail tab).
-const pixelGifGateByTab = new Map(); // tabId → ruleId
-let pixelGifGateNextId = 61001;
-
-function isGmailUrl(url) {
-  try {
-    const u = new URL(String(url || ''));
-    return /mail\.google\.com$/i.test(u.hostname) || u.hostname.endsWith('.mail.google.com');
-  } catch {
-    return false;
-  }
-}
-
-async function setSentBeaconGate(tabId, enabled) {
-  if (!chrome.declarativeNetRequest?.updateSessionRules || tabId == null) return;
-  const existing = pixelGifGateByTab.get(tabId);
-  const removeRuleIds = existing != null ? [existing] : [];
-  const addRules = [];
-  if (enabled) {
-    const id = existing != null ? existing : pixelGifGateNextId++;
-    pixelGifGateByTab.set(tabId, id);
-    addRules.push({
-      id,
-      priority: 1,
-      action: { type: 'block' },
-      condition: {
-        // Broader than *.gif — catch /pixel/<id> and /pixel/<id>.gif
-        urlFilter: '||api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/',
-        resourceTypes: ['image', 'other'],
-        tabIds: [tabId],
-      },
-    });
-  } else if (existing != null) {
-    pixelGifGateByTab.delete(tabId);
-  }
-  try {
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate',message:'session pixel GIF gate updated',data:{tabId,enabled:!!enabled,ruleId:pixelGifGateByTab.get(tabId)??null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  } catch (e) {
-    console.warn('[beacon] pixel GIF DNR gate failed', e?.message || e);
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate:err',message:'session pixel GIF gate FAILED',data:{tabId,enabled:!!enabled,error:String(e&&e.message||e)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }
-}
-
-function syncSentBeaconGateFromUrl(tabId, url) {
-  // webNavigation strips #hash — always arm on any Gmail tab; static ruleset covers the rest.
-  return setSentBeaconGate(tabId, isGmailUrl(url));
-}
-
-const onMailNav = (d) => {
-  if (d.frameId !== 0 || !d.url || !/mail\.google\.com/i.test(d.url)) return;
-  syncSentBeaconGateFromUrl(d.tabId, d.url);
-};
-// onBeforeNavigate arms before subresources; hash is still absent but Gmail-wide block is OK.
-chrome.webNavigation?.onBeforeNavigate?.addListener(onMailNav);
-chrome.webNavigation?.onCommitted?.addListener(onMailNav);
-chrome.webNavigation?.onHistoryStateUpdated?.addListener(onMailNav);
-chrome.webNavigation?.onReferenceFragmentUpdated?.addListener(onMailNav);
-chrome.tabs?.onRemoved?.addListener((tabId) => {
-  setSentBeaconGate(tabId, false).catch(() => {});
-});
-
 function removedStorage(name) {
   throw new Error(`${name} removed. Use src/dao/ (IndexedDB jobsimp-graph).`);
 }
@@ -300,13 +230,6 @@ const handlers = {
   'beacon.track': (p) => trackBeacon(p?.id),
   'beacon.pixelHtml': (p) => ({ html: pixelHtml(p?.id), id: p?.id || '' }),
   'beacon.extractId': (p) => extractBeaconId(p?.html || p?.body || ''),
-  /** Content script: enable/disable Sent-folder GIF block for this tab. */
-  'beacon.sentGate': async (p, _sender) => {
-    const tabId = _sender?.tab?.id;
-    if (tabId == null) return { ok: false };
-    await setSentBeaconGate(tabId, !!p?.on);
-    return { ok: true, on: !!p?.on };
-  },
   'discovered.list': () => discovered.get(),
   'discovered.update': (p) => discovered.put(p),
   'settings.get': () => getSettings(),
