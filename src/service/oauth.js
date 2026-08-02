@@ -18,6 +18,11 @@ function scopes() {
   return chrome.runtime.getManifest().oauth2?.scopes || [];
 }
 
+/** Stable key for "the scope set this token was actually issued with". */
+function currentScopeKey() {
+  return [...scopes()].sort().join(' ');
+}
+
 function clientId() {
   const id = chrome.runtime.getManifest().oauth2?.client_id;
   if (!id || id.startsWith('REPLACE_')) {
@@ -58,17 +63,25 @@ async function launchAuth(interactive) {
     );
   });
   const { accessToken, expiresAt } = parseTokenResponse(responseUrl);
-  await secrets.put({ accessToken, expiresAt });
+  await secrets.put({ accessToken, expiresAt, grantedScopes: currentScopeKey() });
   return accessToken;
 }
 
 export async function getAccessToken(interactive = true) {
   const [u, sec] = await Promise.all([user.get(), secrets.get()]);
   const active = sessionActive(u, sec);
+  // A cached token issued before a scope was added to the manifest (e.g.
+  // gmail.modify) does NOT gain that scope retroactively — Google tokens
+  // are immutable once issued. Without this check, getAccessToken() would
+  // keep silently returning the old, narrower-scoped token until it
+  // naturally expired (~1hr), and every gmail.modify call would 403 —
+  // caught by our fail-soft error handling, so hardening would just quietly
+  // never run, with nothing visibly broken to the person using it.
+  const scopesCurrent = sec.grantedScopes === currentScopeKey();
 
   if (!active) {
     if (!interactive) throw new Error('Session expired — sign in again');
-  } else if (sec.accessToken && sec.expiresAt > Date.now() + 60_000) {
+  } else if (scopesCurrent && sec.accessToken && sec.expiresAt > Date.now() + 60_000) {
     return sec.accessToken;
   }
 

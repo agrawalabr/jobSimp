@@ -3,16 +3,7 @@
   "name": "JobSimp — Job Application Copilot",
   "version": "0.1.9",
   "description": "Google-login job copilot: track applications, AI-parsed multi-resume autofill, JD match scoring, AI outreach emails via Gmail.",
-  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation", "declarativeNetRequest"],
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "beacon_pixel_gate",
-        "enabled": true,
-        "path": "rules/beacon-pixel-gate.json"
-      }
-    ]
-  },
+  "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation"],
   "host_permissions": [
     "https://api-galzsvftoq-uc.a.run.app/*",
     "https://mail.google.com/*",
@@ -193,7 +184,8 @@
     "scopes": [
       "https://www.googleapis.com/auth/userinfo.email",
       "https://www.googleapis.com/auth/userinfo.profile",
-      "https://www.googleapis.com/auth/gmail.send"
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/gmail.modify"
     ]
   },
   "web_accessible_resources": [

@@ -21,7 +21,11 @@ const BTN_ATTR = 'data-jobsimp-compose-track';
 
 /**
  * document_start: no chrome.runtime messaging here.
- * Pixel GIF blocking is the static DNR ruleset + SW webNavigation session rules.
+ * Self-view filtering happens server-side (see functions/server/controller.js
+ * pixel()) — no client-side network blocking is attempted; Gmail appears to
+ * route the sender's own Sent-folder render through the same image-proxy
+ * pipeline as recipient opens, so a client-side DNR rule has nothing to
+ * intercept for the case that actually matters.
  * Messaging at document_start races extension reload and caused uncaught
  * "Extension context invalidated" on hashchange from zombie scripts.
  */
@@ -724,6 +728,12 @@ async function onSend(root) {
       meta: { ...draft.meta },
     });
     if (doc) mergeDoc(from, doc);
+    // Native Gmail send — we never get a message id back from it directly,
+    // so hardening has to find the Sent copy first (by the beacon id
+    // already embedded in the body) before it can strip+trash+reinsert it.
+    // Fire-and-forget: this involves polling Gmail and must not block the
+    // compose window.
+    send('beacon.hardenSent', { beaconId: draft.id, to: draft.meta.to }).catch(() => {});
   } catch (e) {
     console.warn('[JobSimp] beacon.create failed', e);
   }
@@ -742,10 +752,6 @@ async function onRoute() {
   fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'C',location:'mail-track.js:onRoute',message:'onRoute',data:{hash:String(cur||'').slice(0,100),isSentList:isSentList(),isSentOpen:isSentOpen(),enterSentList,fromOpen,accountFrom:accountFrom()||null,hasCompose:hasCompose(),gateOn:shouldGatePixelGif()},timestamp:Date.now()})}).catch(()=>{});
   // #endregion
 
-  // Session DNR backup (static ruleset is primary). Ignore if extension was reloaded.
-  if (extAlive()) {
-    try { await send('beacon.sentGate', { on: true }); } catch { /* ignore */ }
-  }
   watchPixelLoads();
 
   if (isSentList()) {

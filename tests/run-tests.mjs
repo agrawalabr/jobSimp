@@ -1,5 +1,5 @@
 // Unit tests for pure modules (no Chrome APIs). Run: node run-tests.mjs
-import { buildRfc2822, toBase64Url } from '../src/service/gmail.js';
+import { buildRfc2822, toBase64Url, stripPixelFromRawMime, fromBase64Url } from '../src/service/gmail.js';
 import {
   parseRecipients, parseRecipientToken, parseRecipientList, normalizeRecipients,
   recipientGreetingName, formatRecipientToken,
@@ -236,6 +236,77 @@ t('resume parse prompt is lossless + includes schema', () => {
   ok(RESUME_PARSE_PROMPT.includes('Never invent'));
   ok(RESUME_PARSE_SCHEMA.includes('"description"'));
   ok(RESUME_PARSE_SCHEMA.includes('"experiences"'));
+});
+
+console.log('\ngmail.js — stripPixelFromRawMime (Sent-copy hardening)');
+
+function encodeQP(str) {
+  return str.replace(/[^\x20-\x7E]|[=]/g, (c) => `=${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
+}
+
+t('strips a base64-encoded pixel (matches buildRfc2822 own output shape)', () => {
+  const html = '<!DOCTYPE html><html><body><p>Hi there</p>\n'
+    + '<img src="https://api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/abc-123.gif" '
+    + 'width="1" height="1" alt="" style="display:none" data-jobsimp-beacon="abc-123" /></body></html>';
+  const raw = [
+    'To: someone@example.com', 'From: me@example.com', 'Subject: Test', 'MIME-Version: 1.0',
+    'Content-Type: multipart/alternative; boundary="B1"', '',
+    '--B1', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '',
+    Buffer.from('Hi there').toString('base64'),
+    '--B1', 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '',
+    Buffer.from(html).toString('base64').replace(/(.{76})/g, '$1\r\n'),
+    '--B1--',
+  ].join('\r\n');
+  const out = stripPixelFromRawMime(raw);
+  ok(out, 'expected a stripped result, not null');
+  ok(!/data-jobsimp-beacon/.test(out), 'beacon attribute should be gone');
+  ok(!/api-galzsvftoq-uc\.a\.run\.app/.test(out), 'pixel URL should be gone');
+  ok(out.includes('To: someone@example.com'), 'headers preserved');
+  ok(out.includes(Buffer.from('Hi there').toString('base64')), 'plain-text part left untouched');
+});
+
+t('strips a quoted-printable pixel (native Gmail compose shape) and re-encodes as base64', () => {
+  const html = '<div dir="ltr">Hello<div><img src="https://api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/xyz-999.gif" '
+    + 'width="1" height="1" data-jobsimp-beacon="xyz-999"></div></div>';
+  const raw = [
+    'To: someone@example.com', 'From: me@example.com', 'Subject: Test 2', 'MIME-Version: 1.0',
+    'Content-Type: multipart/alternative; boundary="B2"', '',
+    '--B2', 'Content-Type: text/plain; charset=UTF-8', '', 'Hello',
+    '--B2', 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: quoted-printable', '',
+    encodeQP(html),
+    '--B2--',
+  ].join('\r\n');
+  const out = stripPixelFromRawMime(raw);
+  ok(out, 'expected a stripped result, not null');
+  ok(!/data-jobsimp-beacon/.test(out), 'beacon attribute should be gone');
+  const htmlPartHeader = out.split('text/html')[1].split('\r\n\r\n')[0];
+  ok(/Content-Transfer-Encoding: base64/.test(htmlPartHeader), 'encoding header rewritten to base64');
+});
+
+t('no-ops (returns null) when there is no pixel to strip', () => {
+  const raw = [
+    'To: someone@example.com', 'From: me@example.com', 'Subject: Clean', 'MIME-Version: 1.0',
+    'Content-Type: multipart/alternative; boundary="B3"', '',
+    '--B3', 'Content-Type: text/plain; charset=UTF-8', '', 'Hello',
+    '--B3', 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: quoted-printable', '',
+    encodeQP('<div>no pixel here</div>'),
+    '--B3--',
+  ].join('\r\n');
+  eq(stripPixelFromRawMime(raw), null);
+});
+
+t('fails closed (returns null, never throws) on unrecognized/malformed MIME', () => {
+  let threw = false;
+  let out;
+  try { out = stripPixelFromRawMime('To: a@b.com\r\nSubject: plain\r\n\r\njust plain text, no mime parts'); }
+  catch { threw = true; }
+  ok(!threw, 'must not throw on malformed input');
+  eq(out, null);
+});
+
+t('fromBase64Url round-trips toBase64Url for non-ASCII content', () => {
+  const original = 'Hello — wörld 🎯';
+  eq(fromBase64Url(toBase64Url(original)), original);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

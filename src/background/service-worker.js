@@ -5,7 +5,7 @@ import {
   draftEmail, personalizeBody, appendSignature, ensureNamePlaceholder, generalizeGreeting,
 } from '../service/email.js';
 import { parseResume } from '../service/resume.js';
-import { sendEmail, b64, isAuthFailure } from '../service/gmail.js';
+import { sendEmail, b64, isAuthFailure, hardenSentCopy, findSentMessageByBeacon } from '../service/gmail.js';
 import { normalizeRecipients, recipientGreetingName } from '../static/recipients.js';
 import { getSettings, saveSettings } from '../service/settings.js';
 import { signIn, getUser, signOut } from '../service/oauth.js';
@@ -90,76 +90,6 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
   chrome.webNavigation.onReferenceFragmentUpdated?.addListener(onSpaNav);
 }
 
-// ---------- Gmail pixel GIF gate (DNR) ----------
-// Static ruleset (rules/beacon-pixel-gate.json) always blocks browser image loads of
-// /v1/api/beacon/pixel/* initiated by mail.google.com — race-free on hard refresh.
-// Session rules below are a belt-and-suspenders copy for the same tab (hash is NOT
-// available in webNavigation URLs, so we enable for every Gmail tab).
-const pixelGifGateByTab = new Map(); // tabId → ruleId
-let pixelGifGateNextId = 61001;
-
-function isGmailUrl(url) {
-  try {
-    const u = new URL(String(url || ''));
-    return /mail\.google\.com$/i.test(u.hostname) || u.hostname.endsWith('.mail.google.com');
-  } catch {
-    return false;
-  }
-}
-
-async function setSentBeaconGate(tabId, enabled) {
-  if (!chrome.declarativeNetRequest?.updateSessionRules || tabId == null) return;
-  const existing = pixelGifGateByTab.get(tabId);
-  const removeRuleIds = existing != null ? [existing] : [];
-  const addRules = [];
-  if (enabled) {
-    const id = existing != null ? existing : pixelGifGateNextId++;
-    pixelGifGateByTab.set(tabId, id);
-    addRules.push({
-      id,
-      priority: 1,
-      action: { type: 'block' },
-      condition: {
-        // Broader than *.gif — catch /pixel/<id> and /pixel/<id>.gif
-        urlFilter: '||api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/',
-        resourceTypes: ['image', 'other'],
-        tabIds: [tabId],
-      },
-    });
-  } else if (existing != null) {
-    pixelGifGateByTab.delete(tabId);
-  }
-  try {
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate',message:'session pixel GIF gate updated',data:{tabId,enabled:!!enabled,ruleId:pixelGifGateByTab.get(tabId)??null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  } catch (e) {
-    console.warn('[beacon] pixel GIF DNR gate failed', e?.message || e);
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate:err',message:'session pixel GIF gate FAILED',data:{tabId,enabled:!!enabled,error:String(e&&e.message||e)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }
-}
-
-function syncSentBeaconGateFromUrl(tabId, url) {
-  // webNavigation strips #hash — always arm on any Gmail tab; static ruleset covers the rest.
-  return setSentBeaconGate(tabId, isGmailUrl(url));
-}
-
-const onMailNav = (d) => {
-  if (d.frameId !== 0 || !d.url || !/mail\.google\.com/i.test(d.url)) return;
-  syncSentBeaconGateFromUrl(d.tabId, d.url);
-};
-// onBeforeNavigate arms before subresources; hash is still absent but Gmail-wide block is OK.
-chrome.webNavigation?.onBeforeNavigate?.addListener(onMailNav);
-chrome.webNavigation?.onCommitted?.addListener(onMailNav);
-chrome.webNavigation?.onHistoryStateUpdated?.addListener(onMailNav);
-chrome.webNavigation?.onReferenceFragmentUpdated?.addListener(onMailNav);
-chrome.tabs?.onRemoved?.addListener((tabId) => {
-  setSentBeaconGate(tabId, false).catch(() => {});
-});
-
 function removedStorage(name) {
   throw new Error(`${name} removed. Use src/dao/ (IndexedDB jobsimp-graph).`);
 }
@@ -229,9 +159,17 @@ async function sendAndLog({
     status: 'draft',
   };
   try {
-    rec.gmailId = await sendEmail({ to, subject, body, fromName, attachment, beaconId: beaconId || undefined });
+    const sent = await sendEmail({
+      to, subject, body, fromName, attachment, beaconId: beaconId || undefined,
+    });
+    rec.gmailId = sent.id;
     rec.status = 'sent';
     rec.sentAt = Date.now();
+    if (beaconId) {
+      hardenSentCopy({ id: sent.id, threadId: sent.threadId }).then((r) => {
+        if (!r.ok) console.warn('[beacon] outreach hardening skipped', rec.gmailId, r.reason);
+      }).catch((e) => console.warn('[beacon] outreach hardening threw', e.message));
+    }
   } catch (e) {
     rec.status = 'failed';
     rec.error = e.message;
@@ -300,12 +238,23 @@ const handlers = {
   'beacon.track': (p) => trackBeacon(p?.id),
   'beacon.pixelHtml': (p) => ({ html: pixelHtml(p?.id), id: p?.id || '' }),
   'beacon.extractId': (p) => extractBeaconId(p?.html || p?.body || ''),
-  /** Content script: enable/disable Sent-folder GIF block for this tab. */
-  'beacon.sentGate': async (p, _sender) => {
-    const tabId = _sender?.tab?.id;
-    if (tabId == null) return { ok: false };
-    await setSentBeaconGate(tabId, !!p?.on);
-    return { ok: true, on: !!p?.on };
+  /**
+   * Content script: harden the Sent-folder copy after a native Gmail
+   * compose send. We never get a message id from that send (Gmail's own UI
+   * does the actual send call) so we have to find it first via the beacon
+   * id already embedded in the body, then strip+trash+reinsert.
+   */
+  'beacon.hardenSent': async (p) => {
+    const beaconId = String(p?.beaconId || '').trim();
+    if (!beaconId) return { ok: false, reason: 'no beaconId' };
+    const found = await findSentMessageByBeacon(beaconId, { to: p?.to });
+    if (!found) {
+      console.warn('[beacon] mail-track hardening skipped', beaconId, 'sent message not found');
+      return { ok: false, reason: 'sent message not found (search timed out)' };
+    }
+    const result = await hardenSentCopy(found);
+    if (!result.ok) console.warn('[beacon] mail-track hardening skipped', beaconId, result.reason);
+    return result;
   },
   'discovered.list': () => discovered.get(),
   'discovered.update': (p) => discovered.put(p),
