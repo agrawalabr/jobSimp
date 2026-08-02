@@ -30,6 +30,7 @@ app.get("/v1/api/beacon/pixel/:id", (req, res) => {
 });
 app.post("/v1/api/beacon/pixels", requireApiKey, run(c.list));
 app.put("/v1/api/beacon/pixel/:id", requireApiKey, run(c.reset));
+app.patch("/v1/api/beacon/pixel/:id", requireApiKey, run(c.patchMeta));
 app.delete("/v1/api/beacon/pixels", requireApiKey, run(c.destroy));
 
 app.use("/v1/api/beacon", (req, res) => c.fail(res, 404, "Not found"));

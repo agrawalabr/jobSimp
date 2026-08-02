@@ -173,6 +173,28 @@ export async function resetBeacon(id) {
   return Array.isArray(data.data) ? (data.data[0] || { id: key, count: 0 }) : { id: key, count: 0 };
 }
 
+/**
+ * Attach the Gmail message id to an existing beacon's meta, once
+ * hardenSentCopy confirms it (not known at creation time). Backend-side
+ * source of truth for the id, superseding the earlier local-storage-only
+ * approach — beacon.list now returns meta.gmailMessageId directly.
+ */
+export async function patchBeaconMessageId(id, gmailMessageId) {
+  const key = String(id || '').trim();
+  const mid = String(gmailMessageId || '').trim();
+  if (!key || !mid) throw new Error('Beacon id and gmailMessageId required');
+  const res = await fetch(`${BEACON_BASE}${BEACON_PIXEL_PATH}/${encodeURIComponent(key)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ meta: { gmailMessageId: mid } }),
+  });
+  const data = await parseJson(res);
+  if (!res.ok || data?.msg !== 'success') {
+    throw new Error(envelopeError(data, `Beacon patch failed (${res.status})`));
+  }
+  return Array.isArray(data.data) ? (data.data[0] || null) : null;
+}
+
 /** @deprecated Prefer listPixels; kept for older callers. */
 export async function trackBeacon(id) {
   const key = String(id || '').trim();

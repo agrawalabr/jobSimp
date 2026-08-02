@@ -57,6 +57,23 @@ function create({toPayload, matchesFilter}) {
     return toPayload(key, {...snap.data(), count: 0, updatedAt: now, lastHitAt: null});
   }
 
+  /** Merge fields into an existing doc's meta via Firestore dot-path
+   * update (e.g. {gmailMessageId: "..."} -> update "meta.gmailMessageId").
+   * Does not touch any meta field not present in patch. */
+  async function patchMeta(id, patch) {
+    const key = String(id || "").trim();
+    if (!key) return null;
+    const ref = col.doc(key);
+    const snap = await ref.get();
+    if (!snap.exists) return null;
+    const now = new Date().toISOString();
+    const updates = {updatedAt: now};
+    for (const [k, v] of Object.entries(patch || {})) updates[`meta.${k}`] = v;
+    await ref.update(updates);
+    const after = await ref.get();
+    return toPayload(key, after.data());
+  }
+
   async function list(filter) {
     if (filter.id) {
       const snap = await col.doc(filter.id).get();
@@ -90,6 +107,7 @@ function create({toPayload, matchesFilter}) {
     register,
     hit,
     reset,
+    patchMeta,
     list,
     remove,
     close: async () => {},

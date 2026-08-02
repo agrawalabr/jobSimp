@@ -10,6 +10,12 @@ const SENT_AT_RE =
   /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}, \d{1,2}:\d{2}\s*[AP]M$/;
 const CREATE_KEYS = ["id", "count", "meta"];
 const META_KEYS = ["source", "to", "from", "subject", "sentAt"];
+// Fields that may be attached to an EXISTING beacon's meta after the fact,
+// via patchMeta — never accepted at create time, since none of them are
+// known yet at that point (gmailMessageId is only discovered once
+// hardenSentCopy confirms the Sent-folder replacement's final id, which
+// happens moments after create, not during it).
+const PATCH_META_KEYS = ["gmailMessageId"];
 
 function err(status, message) {
   const e = new Error(message);
@@ -124,6 +130,22 @@ function assertEmptyBody(body) {
   }
 }
 
+/** Returns { gmailMessageId } — strict, single-purpose, mirrors the
+ * exact-keys style used everywhere else in this file. */
+function assertPatchMeta(body) {
+  if (!keysExact(body, ["meta"])) {
+    throw err(400, "body must be exactly { meta }");
+  }
+  if (!keysExact(body.meta, PATCH_META_KEYS)) {
+    throw err(400, "meta must be exactly { gmailMessageId }");
+  }
+  const {gmailMessageId} = body.meta;
+  if (typeof gmailMessageId !== "string" || !gmailMessageId.trim()) {
+    throw err(400, "meta.gmailMessageId must be a non-empty string");
+  }
+  return {gmailMessageId: gmailMessageId.trim()};
+}
+
 function beaconId(param) {
   return String(param || "").replace(/\.gif$/i, "").trim();
 }
@@ -133,14 +155,27 @@ async function create(req, res) {
   ok(res, 201, [await store.register(doc)]);
 }
 
+// Suppress hits that land within this many ms of the beacon's registration
+// (createdAt, set at send time). Catches the Compose→Sent UI transition
+// re-rendering the just-sent message, independent of the referer signal.
+const SELF_VIEW_GRACE_MS = 8000;
+
 async function pixel(req, res) {
   // Count recipient opens; skip sender self-views in Gmail.
   //
   // Browsers NEVER send the URL hash in Referer, so we cannot match
   // https://mail.google.com/mail/u/0/#sent/... literally. Self-views arrive as:
   //   Referer: https://mail.google.com/  or  .../mail/u/0/
-  // Recipient opens in Gmail use Google Image Proxy (UA has GoogleImageProxy);
-  // those have no mail.google.com Referer and MUST still count.
+  //
+  // IMPORTANT: GoogleImageProxy UA is NOT a reliable "this is a real recipient"
+  // signal on its own — Gmail appears to route the sender's own Sent-folder
+  // render through the same proxy pipeline, so isRecipientGmailProxy can be
+  // true on a genuine self-view too. Do not let it override the referer check
+  // (a previous version used `isRecipientGmailProxy || !isSelfGmailUi`, which
+  // meant a self-view with a proxy UA was always counted — that was the bug
+  // causing every Sent-folder open to register as a hit). Referer is the only
+  // signal that actually reflects *whose browser initiated the render*, so it
+  // alone decides; UA is retained for diagnostics only.
   const referer = String(req.get("referer") || req.get("referrer") || "");
   const ua = String(req.get("user-agent") || "");
 
@@ -148,13 +183,31 @@ async function pixel(req, res) {
   const isRecipientGmailProxy = /GoogleImageProxy/i.test(ua)
     || /\(via ggpht\.com\b/i.test(ua);
 
-  // Self (Sent / Draft / Compose / reading in Gmail tab) → skip.
-  // Recipient (Gmail proxy or other mail clients) → hit.
-  const shouldCount = isRecipientGmailProxy || !isSelfGmailUi;
+  const id = beaconId(req.params.id);
+  let withinGraceWindow = false;
+  if (!isSelfGmailUi) {
+    try {
+      const [doc] = await store.list({id});
+      if (doc && doc.createdAt) {
+        const age = Date.now() - Date.parse(doc.createdAt);
+        withinGraceWindow = Number.isFinite(age) && age >= 0 && age < SELF_VIEW_GRACE_MS;
+      }
+    } catch {
+      /* if the lookup fails, fall through and count as usual */
+    }
+  }
+
+  const shouldCount = !isSelfGmailUi && !withinGraceWindow;
+
+  // Diagnostic log — cheap, and lets us confirm/adjust the heuristics against
+  // real traffic (Cloud Logging) without needing to reproduce locally.
+  console.log("[beacon] pixel hit", {
+    id, referer, ua, isSelfGmailUi, isRecipientGmailProxy, withinGraceWindow, shouldCount,
+  });
 
   if (shouldCount) {
     try {
-      await store.hit(beaconId(req.params.id));
+      await store.hit(id);
     } catch {
       /* always return GIF */
     }
@@ -182,8 +235,17 @@ async function reset(req, res) {
   ok(res, 200, [doc]);
 }
 
+async function patchMeta(req, res) {
+  const id = beaconId(req.params.id);
+  if (!id) throw err(400, "id is required");
+  const patch = assertPatchMeta(req.body);
+  const doc = await store.patchMeta(id, patch);
+  if (!doc) throw err(404, "Beacon not found");
+  ok(res, 200, [doc]);
+}
+
 async function destroy(req, res) {
   ok(res, 200, await store.remove(assertFilter(req.body)));
 }
 
-module.exports = {create, pixel, list, reset, destroy, ok, fail};
+module.exports = {create, pixel, list, reset, patchMeta, destroy, ok, fail};

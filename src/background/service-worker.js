@@ -5,7 +5,7 @@ import {
   draftEmail, personalizeBody, appendSignature, ensureNamePlaceholder, generalizeGreeting,
 } from '../service/email.js';
 import { parseResume } from '../service/resume.js';
-import { sendEmail, b64, isAuthFailure } from '../service/gmail.js';
+import { sendEmail, b64, isAuthFailure, hardenSentCopy, findSentMessageByBeacon } from '../service/gmail.js';
 import { normalizeRecipients, recipientGreetingName } from '../static/recipients.js';
 import { getSettings, saveSettings } from '../service/settings.js';
 import { signIn, getUser, signOut } from '../service/oauth.js';
@@ -18,7 +18,7 @@ import {
 import { identityContext } from '../service/identity.js';
 import {
   ensureBeacon, trackBeacon, registerBeacon, resetBeacon, pixelHtml, extractBeaconId,
-  listPixels, createPixel,
+  listPixels, createPixel, patchBeaconMessageId,
 } from '../service/beacon.js';
 import { JD_ANALYSIS_PROMPT } from '../static/prompts.js';
 import { isJobUrl, jobCacheKey, extractJobId, JD_TEXT_LIMIT } from '../static/jobUrl.js';
@@ -56,19 +56,27 @@ async function reloadGmailTabs(reason) {
   }
 }
 
-// Unpacked "Reload" restarts the SW; bump storage so Gmail tabs pick up new content scripts.
-reloadGmailTabs('boot').catch(() => {});
-
-chrome.alarms?.clear?.('jobsimp-poll');
-chrome.alarms?.clear?.('jobsimp-sync');
-resume.warm().catch((e) => console.warn('dao warm failed', e.message));
-
 // ---------- ephemeral-store hygiene (transactions + jdgraphs are TTL'd) ----------
 const cleanupEphemeral = () => Promise.all([transaction.cleanup(), jdgraph.cleanup()])
   .catch((e) => console.warn('ephemeral cleanup failed', e.message));
-cleanupEphemeral();
-chrome.alarms?.create?.('jobsimp-ttl', { periodInMinutes: 24 * 60 });
+
 chrome.alarms?.onAlarm?.addListener((a) => { if (a.name === 'jobsimp-ttl') cleanupEphemeral(); });
+
+/**
+ * Defer boot side-effects until after the first event-loop turn so SW
+ * registration cannot fail with Chrome's opaque "Failed to load the script
+ * unexpectedly" when tabs/alarms/IndexedDB race the module evaluate.
+ */
+function bootSideEffects() {
+  chrome.alarms?.clear?.('jobsimp-poll');
+  chrome.alarms?.clear?.('jobsimp-sync');
+  chrome.alarms?.create?.('jobsimp-ttl', { periodInMinutes: 24 * 60 });
+  resume.warm().catch((e) => console.warn('dao warm failed', e.message));
+  cleanupEphemeral();
+  // Unpacked "Reload" restarts the SW; bump storage so Gmail tabs pick up new content scripts.
+  reloadGmailTabs('boot').catch(() => {});
+}
+queueMicrotask(bootSideEffects);
 
 // Per-tab application context: set on Apply click, read by the injected autofill.
 // In-memory is fine — it's re-set on every Apply click if the SW restarts.
@@ -89,76 +97,6 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
   chrome.webNavigation.onHistoryStateUpdated.addListener(onSpaNav);
   chrome.webNavigation.onReferenceFragmentUpdated?.addListener(onSpaNav);
 }
-
-// ---------- Gmail pixel GIF gate (DNR) ----------
-// Static ruleset (rules/beacon-pixel-gate.json) always blocks browser image loads of
-// /v1/api/beacon/pixel/* initiated by mail.google.com — race-free on hard refresh.
-// Session rules below are a belt-and-suspenders copy for the same tab (hash is NOT
-// available in webNavigation URLs, so we enable for every Gmail tab).
-const pixelGifGateByTab = new Map(); // tabId → ruleId
-let pixelGifGateNextId = 61001;
-
-function isGmailUrl(url) {
-  try {
-    const u = new URL(String(url || ''));
-    return /mail\.google\.com$/i.test(u.hostname) || u.hostname.endsWith('.mail.google.com');
-  } catch {
-    return false;
-  }
-}
-
-async function setSentBeaconGate(tabId, enabled) {
-  if (!chrome.declarativeNetRequest?.updateSessionRules || tabId == null) return;
-  const existing = pixelGifGateByTab.get(tabId);
-  const removeRuleIds = existing != null ? [existing] : [];
-  const addRules = [];
-  if (enabled) {
-    const id = existing != null ? existing : pixelGifGateNextId++;
-    pixelGifGateByTab.set(tabId, id);
-    addRules.push({
-      id,
-      priority: 1,
-      action: { type: 'block' },
-      condition: {
-        // Broader than *.gif — catch /pixel/<id> and /pixel/<id>.gif
-        urlFilter: '||api-galzsvftoq-uc.a.run.app/v1/api/beacon/pixel/',
-        resourceTypes: ['image', 'other'],
-        tabIds: [tabId],
-      },
-    });
-  } else if (existing != null) {
-    pixelGifGateByTab.delete(tabId);
-  }
-  try {
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate',message:'session pixel GIF gate updated',data:{tabId,enabled:!!enabled,ruleId:pixelGifGateByTab.get(tabId)??null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  } catch (e) {
-    console.warn('[beacon] pixel GIF DNR gate failed', e?.message || e);
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H4',location:'service-worker.js:setSentBeaconGate:err',message:'session pixel GIF gate FAILED',data:{tabId,enabled:!!enabled,error:String(e&&e.message||e)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }
-}
-
-function syncSentBeaconGateFromUrl(tabId, url) {
-  // webNavigation strips #hash — always arm on any Gmail tab; static ruleset covers the rest.
-  return setSentBeaconGate(tabId, isGmailUrl(url));
-}
-
-const onMailNav = (d) => {
-  if (d.frameId !== 0 || !d.url || !/mail\.google\.com/i.test(d.url)) return;
-  syncSentBeaconGateFromUrl(d.tabId, d.url);
-};
-// onBeforeNavigate arms before subresources; hash is still absent but Gmail-wide block is OK.
-chrome.webNavigation?.onBeforeNavigate?.addListener(onMailNav);
-chrome.webNavigation?.onCommitted?.addListener(onMailNav);
-chrome.webNavigation?.onHistoryStateUpdated?.addListener(onMailNav);
-chrome.webNavigation?.onReferenceFragmentUpdated?.addListener(onMailNav);
-chrome.tabs?.onRemoved?.addListener((tabId) => {
-  setSentBeaconGate(tabId, false).catch(() => {});
-});
 
 function removedStorage(name) {
   throw new Error(`${name} removed. Use src/dao/ (IndexedDB jobsimp-graph).`);
@@ -209,6 +147,102 @@ async function beaconForSend({ reuseId, meta }) {
   }
 }
 
+// ---------- beacon <-> Gmail message id (exact Sent-row matching) ----------
+//
+// Gmail's own Sent-list rows expose a native message id in the DOM
+// (data-legacy-last-non-draft-message-id) — the same id format
+// hardenSentCopy's insert step returns. The moment hardening confirms a
+// beacon's final Gmail message id, attach it to that beacon's own meta via
+// patchBeaconMessageId — beacon.list then returns meta.gmailMessageId
+// directly, so the content script can build an exact match index straight
+// from docs it already fetches, no separate lookup needed.
+
+async function recordBeaconMessageId(beaconId, gmailMessageId) {
+  if (!beaconId || !gmailMessageId) return;
+  try {
+    await patchBeaconMessageId(beaconId, gmailMessageId);
+  } catch (e) {
+    console.warn('[beacon] recordBeaconMessageId failed', e.message);
+  }
+}
+//
+// A "Schedule send" click queues the message in Gmail without sending it —
+// it can sit there for hours or days, and may fire long after this browser
+// session (even after a restart). The pixel has to be baked into the body
+// at schedule-click time (that's the content that eventually goes out),
+// but registering the beacon then would be premature: the message hasn't
+// actually been sent, may still be edited/cancelled from the queue, and
+// hardenSentCopy would have nothing to find yet. So registration is
+// deferred to a periodic alarm that checks whether each pending watch has
+// actually landed in Sent — reusing the same search-then-verify approach
+// findSentMessageByBeacon already uses for the immediate-send flow.
+//
+// Persisted in chrome.storage.local rather than the IndexedDB dao layer:
+// this is a small, short-lived, unindexed queue, not a real resource.
+
+const SCHEDULED_WATCH_KEY = 'jobsimp_scheduled_beacon_watches';
+const SCHEDULED_ALARM = 'jobsimp-scheduled-beacon-check';
+const SCHEDULED_WATCH_MAX_AGE_MS = 32 * 24 * 3600 * 1000; // past Gmail's schedule horizon
+
+async function getScheduledWatches() {
+  const got = await chrome.storage.local.get(SCHEDULED_WATCH_KEY);
+  const list = got?.[SCHEDULED_WATCH_KEY];
+  return Array.isArray(list) ? list : [];
+}
+
+async function setScheduledWatches(list) {
+  await chrome.storage.local.set({ [SCHEDULED_WATCH_KEY]: list });
+}
+
+async function ensureScheduledAlarm() {
+  const existing = await chrome.alarms.get(SCHEDULED_ALARM);
+  if (!existing) chrome.alarms.create(SCHEDULED_ALARM, { periodInMinutes: 10 });
+}
+
+async function checkScheduledWatches() {
+  const watches = await getScheduledWatches();
+  if (!watches.length) {
+    await chrome.alarms.clear(SCHEDULED_ALARM);
+    return;
+  }
+  const remaining = [];
+  for (const w of watches) {
+    if (Date.now() - (w.addedAt || 0) > SCHEDULED_WATCH_MAX_AGE_MS) {
+      console.warn('[beacon] scheduled watch expired without confirming send', w.beaconId);
+      continue; // drop — well past any realistic Gmail schedule horizon
+    }
+    let found = null;
+    try {
+      found = await findSentMessageByBeacon(w.beaconId, { to: w.to, retries: 1, delayMs: 0 });
+    } catch (e) {
+      console.warn('[beacon] scheduled watch search failed', w.beaconId, e.message);
+    }
+    if (!found) {
+      remaining.push(w); // still queued (or not yet indexed) — check again next cycle
+      continue;
+    }
+    // Actually sent now — register the beacon at real send time, then harden.
+    try {
+      await createPixel({ id: w.beaconId, count: 0, meta: w.meta });
+    } catch (e) {
+      console.warn('[beacon] scheduled watch: createPixel failed', w.beaconId, e.message);
+      remaining.push(w); // retry next cycle rather than losing tracking silently
+      continue;
+    }
+    hardenSentCopy(found).then((r) => {
+      if (!r.ok) console.warn('[beacon] scheduled hardening skipped', w.beaconId, r.reason);
+      else if (r.id) recordBeaconMessageId(w.beaconId, r.id).catch(() => {});
+    }).catch((e) => console.warn('[beacon] scheduled hardening threw', e.message));
+  }
+  await setScheduledWatches(remaining);
+  if (!remaining.length) await chrome.alarms.clear(SCHEDULED_ALARM);
+}
+
+chrome.alarms?.onAlarm?.addListener((alarm) => {
+  if (alarm.name !== SCHEDULED_ALARM) return;
+  checkScheduledWatches().catch((e) => console.warn('[beacon] scheduled check failed', e.message));
+});
+
 /** Send one message and persist its log row. Never throws. */
 async function sendAndLog({
   to, toName, body, subject, jobId, provider, resumeId, attached, fromName, attachment, beaconId,
@@ -229,9 +263,18 @@ async function sendAndLog({
     status: 'draft',
   };
   try {
-    rec.gmailId = await sendEmail({ to, subject, body, fromName, attachment, beaconId: beaconId || undefined });
+    const sent = await sendEmail({
+      to, subject, body, fromName, attachment, beaconId: beaconId || undefined,
+    });
+    rec.gmailId = sent.id;
     rec.status = 'sent';
     rec.sentAt = Date.now();
+    if (beaconId) {
+      hardenSentCopy({ id: sent.id, threadId: sent.threadId }).then((r) => {
+        if (!r.ok) console.warn('[beacon] outreach hardening skipped', rec.gmailId, r.reason);
+        else if (r.id) recordBeaconMessageId(beaconId, r.id).catch(() => {});
+      }).catch((e) => console.warn('[beacon] outreach hardening threw', e.message));
+    }
   } catch (e) {
     rec.status = 'failed';
     rec.error = e.message;
@@ -300,12 +343,42 @@ const handlers = {
   'beacon.track': (p) => trackBeacon(p?.id),
   'beacon.pixelHtml': (p) => ({ html: pixelHtml(p?.id), id: p?.id || '' }),
   'beacon.extractId': (p) => extractBeaconId(p?.html || p?.body || ''),
-  /** Content script: enable/disable Sent-folder GIF block for this tab. */
-  'beacon.sentGate': async (p, _sender) => {
-    const tabId = _sender?.tab?.id;
-    if (tabId == null) return { ok: false };
-    await setSentBeaconGate(tabId, !!p?.on);
-    return { ok: true, on: !!p?.on };
+  /**
+   * Content script: harden the Sent-folder copy after a native Gmail
+   * compose send. We never get a message id from that send (Gmail's own UI
+   * does the actual send call) so we have to find it first via the beacon
+   * id already embedded in the body, then strip+trash+reinsert.
+   */
+  'beacon.hardenSent': async (p) => {
+    const beaconId = String(p?.beaconId || '').trim();
+    if (!beaconId) return { ok: false, reason: 'no beaconId' };
+    const found = await findSentMessageByBeacon(beaconId, { to: p?.to });
+    if (!found) {
+      console.warn('[beacon] mail-track hardening skipped', beaconId, 'sent message not found');
+      return { ok: false, reason: 'sent message not found (search timed out)' };
+    }
+    const result = await hardenSentCopy(found);
+    if (!result.ok) console.warn('[beacon] mail-track hardening skipped', beaconId, result.reason);
+    else if (result.id) recordBeaconMessageId(beaconId, result.id).catch(() => {});
+    return result;
+  },
+  /**
+   * Content script: a "Schedule send" click was detected — the pixel is
+   * already baked into the queued message, but registration is deferred
+   * until checkScheduledWatches() confirms it actually left the queue.
+   */
+  'beacon.watchScheduled': async (p) => {
+    const beaconId = String(p?.beaconId || '').trim();
+    if (!beaconId) return { ok: false, reason: 'no beaconId' };
+    const watches = await getScheduledWatches();
+    if (!watches.some((w) => w.beaconId === beaconId)) {
+      watches.push({
+        beaconId, to: p?.to || [], meta: p?.meta || {}, addedAt: Date.now(),
+      });
+      await setScheduledWatches(watches);
+    }
+    await ensureScheduledAlarm();
+    return { ok: true };
   },
   'discovered.list': () => discovered.get(),
   'discovered.update': (p) => discovered.put(p),
@@ -553,7 +626,7 @@ const handlers = {
       const toList = list.map((r) => r.email);
       const beaconId = await beaconForSend({
         reuseId,
-        meta: { jobId: p.jobId, to: toList.join(', '), source: 'outreach' },
+        meta: { jobId: p.jobId, to: toList.join(', '), source: 'jobSimp' },
       });
       return [await sendAndLog({
         ...common,
@@ -570,7 +643,7 @@ const handlers = {
       // Fan-out: one beacon per recipient so open counts stay independent.
       const beaconId = await beaconForSend({
         reuseId: list.length === 1 ? reuseId : '',
-        meta: { jobId: p.jobId, to: r.email, source: 'outreach' },
+        meta: { jobId: p.jobId, to: r.email, source: 'jobSimp' },
       });
       const out = await sendAndLog({
         ...common,

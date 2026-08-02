@@ -226,6 +226,7 @@ export function emptySecrets(partial = {}) {
     accessToken: '',
     expiresAt: 0,
     sessionExpiresAt: 0,
+    grantedScopes: '',
     ...partial,
   };
 }
@@ -253,7 +254,7 @@ export const FIELDS = Object.freeze({
   [TYPES.SETTINGS]: [
     'provider', 'model', 'gmail', 'emailTemplate', 'onboarded', 'widgetResumeId',
   ],
-  [TYPES.SECRETS]: ['llmKeys', 'accessToken', 'expiresAt', 'sessionExpiresAt'],
+  [TYPES.SECRETS]: ['llmKeys', 'accessToken', 'expiresAt', 'sessionExpiresAt', 'grantedScopes'],
   [TYPES.TRANSACTION]: [
     'jobKey', 'jobId', 'resumeId', 'trackedJobId', 'mode', 'status', 'tailored',
     'pages', 'fieldAnswers', 'createdAt', 'updatedAt', 'expiresAt',
