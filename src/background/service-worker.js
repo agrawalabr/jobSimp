@@ -5,7 +5,7 @@ import {
   draftEmail, personalizeBody, appendSignature, ensureNamePlaceholder, generalizeGreeting,
 } from '../service/email.js';
 import { parseResume } from '../service/resume.js';
-import { sendEmail, b64, isAuthFailure, hardenSentCopy, findSentMessageByBeacon } from '../service/gmail.js';
+import { sendEmail, b64, isAuthFailure, hardenSentCopy, findSentMessageByBeacon, getGmailMessage } from '../service/gmail.js';
 import { normalizeRecipients, recipientGreetingName } from '../static/recipients.js';
 import { getSettings, saveSettings } from '../service/settings.js';
 import { signIn, getUser, signOut } from '../service/oauth.js';
@@ -245,7 +245,7 @@ chrome.alarms?.onAlarm?.addListener((alarm) => {
 
 /** Send one message and persist its log row. Never throws. */
 async function sendAndLog({
-  to, toName, body, subject, jobId, provider, resumeId, attached, fromName, attachment, beaconId,
+  to, toName, body, subject, jobId, provider, resumeId, attached, fromName, attachments, beaconId,
 }) {
   const toStr = Array.isArray(to) ? to.join(', ') : to;
   const bid = beaconId || '';
@@ -264,7 +264,7 @@ async function sendAndLog({
   };
   try {
     const sent = await sendEmail({
-      to, subject, body, fromName, attachment, beaconId: beaconId || undefined,
+      to, subject, body, fromName, attachments, beaconId: beaconId || undefined,
     });
     rec.gmailId = sent.id;
     rec.status = 'sent';
@@ -297,6 +297,8 @@ const handlers = {
   'answers.save': (p) => answer.post(p),
   'answers.delete': (p) => answer.delete(p.id),
   'emails.list': () => email.get(),
+  /** Fetch a Sent message from Gmail for the Outreach reading pane. */
+  'email.getGmail': (p) => getGmailMessage(p?.gmailId || p?.id),
   /** Upsert outreach/webmail tracking log. Dedupes by beaconId. */
   'emails.post': async (p = {}) => {
     const beaconId = String(p.beaconId || p.jobsimp?.beaconId || '').trim();
@@ -598,36 +600,51 @@ const handlers = {
     if (group) body = generalizeGreeting(body, list.map(recipientGreetingName));
     body = appendSignature(body, p.signature ?? s.emailTemplate?.signature ?? '');
 
-    let attachment = null;
-    let attachError = '';
-    if (p.attach) {
-      if (!p.resumeId) {
-        attachError = 'No resume selected — nothing attached.';
-      } else {
-        ({ attachment, error: attachError } = await buildResumeAttachment(p.resumeId));
-      }
-    }
-    // Asked for an attachment and we could not build one → stop, do not send a
-    // resume-less email the user believes carried their resume.
-    if (p.attach && !attachment) throw new Error(attachError || 'Could not attach resume.');
+    const attachments = [];
+    const wantResume = !!p.attach;
+    const fileExtras = Array.isArray(p.fileAttachments)
+      ? p.fileAttachments
+      : (p.fileAttachment?.dataB64 ? [p.fileAttachment] : []);
 
-    const reuseId = p.beaconId || extractBeaconId(body) || '';
+    if (wantResume) {
+      if (!p.resumeId) throw new Error('No resume selected — nothing attached.');
+      const built = await buildResumeAttachment(p.resumeId);
+      if (!built.attachment) throw new Error(built.error || 'Could not attach resume.');
+      attachments.push(built.attachment);
+    }
+    for (const f of fileExtras) {
+      if (!f?.dataB64) continue;
+      attachments.push({
+        filename: f.filename || 'attachment',
+        mime: f.mime || 'application/octet-stream',
+        dataB64: f.dataB64,
+      });
+    }
+    // Asked for file attachments and none resolved → stop.
+    if (fileExtras.length && attachments.length === (wantResume ? 1 : 0)) {
+      throw new Error('Could not attach file.');
+    }
+
+    const wantTrack = p.track !== false;
+    const reuseId = wantTrack ? (p.beaconId || extractBeaconId(body) || '') : '';
     const common = {
       subject,
       jobId: p.jobId,
       provider: p.provider,
       fromName: s.gmail?.fromName || '',
-      resumeId: p.attach ? p.resumeId : '',
-      attached: !!attachment,
-      attachment,
+      resumeId: wantResume ? p.resumeId : '',
+      attached: attachments.length > 0,
+      attachments,
     };
 
     if (group) {
       const toList = list.map((r) => r.email);
-      const beaconId = await beaconForSend({
-        reuseId,
-        meta: { jobId: p.jobId, to: toList.join(', '), source: 'jobSimp' },
-      });
+      const beaconId = wantTrack
+        ? await beaconForSend({
+          reuseId,
+          meta: { jobId: p.jobId, to: toList.join(', '), source: 'jobSimp' },
+        })
+        : '';
       return [await sendAndLog({
         ...common,
         to: toList,
@@ -641,10 +658,12 @@ const handlers = {
     for (const r of list) {
       const greeting = recipientGreetingName(r);
       // Fan-out: one beacon per recipient so open counts stay independent.
-      const beaconId = await beaconForSend({
-        reuseId: list.length === 1 ? reuseId : '',
-        meta: { jobId: p.jobId, to: r.email, source: 'jobSimp' },
-      });
+      const beaconId = wantTrack
+        ? await beaconForSend({
+          reuseId: list.length === 1 ? reuseId : '',
+          meta: { jobId: p.jobId, to: r.email, source: 'jobSimp' },
+        })
+        : '';
       const out = await sendAndLog({
         ...common,
         to: r.email,

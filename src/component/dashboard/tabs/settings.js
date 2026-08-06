@@ -44,7 +44,6 @@ async function load() {
     if (el) el.value = settings.ai.keys?.[id] || '';
   });
   $('gmail_fromName').value = settings.gmail?.fromName || '';
-  $('tmpl_tone').value = settings.emailTemplate?.tone || '';
   $('tmpl_signature').value = settings.emailTemplate?.signature || '';
 }
 
@@ -80,7 +79,7 @@ async function saveAll() {
       keys: Object.fromEntries(providerIds().map((id) => [id, $(`key_${id}`).value.trim()])),
     },
     gmail: { enabled: true, fromName: $('gmail_fromName').value.trim() },
-    emailTemplate: { tone: $('tmpl_tone').value.trim(), signature: $('tmpl_signature').value },
+    emailTemplate: { signature: $('tmpl_signature').value },
   });
   btn.disabled = false;
   flash('saveMsg', res?.ok ? 'Saved' : `Save failed: ${res?.error}`);

@@ -1,4 +1,5 @@
-// Gmail send via HTTPS OAuth (launchWebAuthFlow) + Gmail REST API (scope: gmail.send only).
+// Gmail send + Sent hardening via HTTPS OAuth (launchWebAuthFlow) + Gmail REST API.
+// Scopes: gmail.send (outbound) + gmail.modify (read/rewrite Sent for hardening + reader).
 //
 // Recipient parsing lives in ../static/recipients.js (pure, chrome-free) and is
 // re-exported here so existing importers keep working. UI code should import
@@ -78,11 +79,12 @@ function buildAlternativeParts(body, beaconId) {
 }
 
 /**
- * Build RFC 2822 message. Optional attachment: { filename, mime, dataB64 }.
- * Optional beaconId: embeds open-tracking pixel in the HTML part only.
+ * Build RFC 2822 message.
+ * Optional attachment(s): { filename, mime, dataB64 } — pass `attachment` (single)
+ * and/or `attachments` (array). Optional beaconId embeds open-tracking pixel.
  * `to` may be a string or string[].
  */
-export function buildRfc2822({ to, from, fromName, subject, body, attachment, beaconId }) {
+export function buildRfc2822({ to, from, fromName, subject, body, attachment, attachments, beaconId }) {
   const fromHeader = fromName ? `${fromName} <${from}>` : from;
   const headers = [
     `To: ${toHeaderValue(to)}`,
@@ -92,8 +94,12 @@ export function buildRfc2822({ to, from, fromName, subject, body, attachment, be
   ];
 
   const alt = buildAlternativeParts(String(body || ''), beaconId || '');
+  const files = [
+    ...(Array.isArray(attachments) ? attachments : []),
+    ...(attachment?.dataB64 ? [attachment] : []),
+  ].filter((a) => a?.dataB64);
 
-  if (!attachment?.dataB64) {
+  if (!files.length) {
     return [
       ...headers,
       alt.raw,
@@ -101,24 +107,28 @@ export function buildRfc2822({ to, from, fromName, subject, body, attachment, be
   }
 
   const boundary = mixedBoundary();
-  const filename = String(attachment.filename || 'resume').replace(/[\r\n"]/g, '');
-  const mime = attachment.mime || 'application/octet-stream';
-  const fileB64 = String(attachment.dataB64).replace(/\s+/g, '');
-
-  return [
+  const parts = [
     ...headers,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
     `--${boundary}`,
     alt.raw,
-    `--${boundary}`,
-    `Content-Type: ${mime}; name="${filename}"`,
-    'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${filename}"`,
-    '',
-    fileB64,
-    `--${boundary}--`,
-  ].join('\r\n');
+  ];
+  for (const file of files) {
+    const filename = String(file.filename || 'attachment').replace(/[\r\n"]/g, '');
+    const mime = file.mime || 'application/octet-stream';
+    const fileB64 = String(file.dataB64).replace(/\s+/g, '');
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${mime}; name="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${filename}"`,
+      '',
+      fileB64,
+    );
+  }
+  parts.push(`--${boundary}--`);
+  return parts.join('\r\n');
 }
 
 export function b64(str) {
@@ -137,10 +147,10 @@ export async function getAuthToken(interactive = true) {
   return getAccessToken(interactive);
 }
 
-export async function sendEmail({ to, subject, body, fromName, attachment, beaconId }) {
+export async function sendEmail({ to, subject, body, fromName, attachment, attachments, beaconId }) {
   const token = await getAccessToken(true);
   const raw = toBase64Url(buildRfc2822({
-    to, from: 'me', fromName, subject, body, attachment, beaconId,
+    to, from: 'me', fromName, subject, body, attachment, attachments, beaconId,
   }));
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
@@ -212,6 +222,78 @@ export function fromBase64Url(s) {
   const bin = atob(std);
   const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
   return new TextDecoder('utf-8').decode(bytes);
+}
+
+function headerMap(headers = []) {
+  const out = {};
+  for (const h of headers) {
+    if (!h?.name) continue;
+    out[String(h.name).toLowerCase()] = h.value || '';
+  }
+  return out;
+}
+
+function decodeBodyData(data) {
+  if (!data) return '';
+  try {
+    return fromBase64Url(data);
+  } catch {
+    return '';
+  }
+}
+
+/** Walk a Gmail message payload and pick plain + html bodies. */
+function extractBodies(payload, acc = { text: '', html: '' }) {
+  if (!payload) return acc;
+  const mime = String(payload.mimeType || '').toLowerCase();
+  const data = payload.body?.data;
+  if (data && mime === 'text/plain' && !acc.text) acc.text = decodeBodyData(data);
+  if (data && mime === 'text/html' && !acc.html) acc.html = decodeBodyData(data);
+  for (const part of payload.parts || []) extractBodies(part, acc);
+  return acc;
+}
+
+function htmlToPlain(html) {
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Load a Gmail message for display in the Outreach reader.
+ * Prefer text/plain; fall back to stripped HTML. Fail-soft callers should
+ * catch — this throws on missing id / API errors.
+ */
+export async function getGmailMessage(gmailId) {
+  const id = String(gmailId || '').trim();
+  if (!id) throw new Error('gmailId required');
+  const msg = await gmailFetch(`/messages/${encodeURIComponent(id)}?format=full`);
+  const headers = headerMap(msg?.payload?.headers);
+  const bodies = extractBodies(msg?.payload);
+  const bodyText = (bodies.text || '').trim() || htmlToPlain(bodies.html);
+  return {
+    id: msg.id,
+    threadId: msg.threadId,
+    subject: headers.subject || '',
+    to: headers.to || '',
+    from: headers.from || '',
+    date: headers.date || '',
+    snippet: msg.snippet || '',
+    bodyText,
+    bodyHtml: bodies.html || '',
+  };
 }
 
 function decodeStdBase64(s) {

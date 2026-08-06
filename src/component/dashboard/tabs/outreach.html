@@ -1,50 +1,84 @@
 <div class="panel" id="outreach">
-  <div id="composer">
-    <div class="grid2">
-      <div class="field"><label>Resume</label><select id="c_resume"></select></div>
-      <div class="field"><label>Job (JD used for drafting)</label><select id="c_job"></select></div>
-    </div>
-    <label class="check-row"><input type="checkbox" id="c_attach"> Attach resume to email</label>
-
-    <div class="field">
-      <label>Context (JD / comment / subprompt)</label>
-      <textarea id="c_context" rows="3" placeholder="Paste JD or a short note to tailor the email. Leave empty for a generic cold outreach."></textarea>
-    </div>
-
-    <div class="field">
-      <label>Recipients</label>
-      <div class="recipient-box" id="c_to_box">
-        <div class="recipient-chips" id="c_to_chips"></div>
-        <input id="c_to_input" type="text" placeholder="email@company.com · Name &lt;email@company.com&gt; · paste a whole list" autocomplete="off">
+  <div class="outreach-shell">
+    <aside class="outreach-list" aria-label="Sent mail">
+      <div class="outreach-list-head">
+        <div class="outreach-list-title">
+          <span class="outreach-folder">Sent</span>
+          <span class="hint" id="sentCount"></span>
+        </div>
+        <button type="button" class="primary" id="composeOpenBtn" data-tip="Compose new message" aria-label="Compose new message">Compose</button>
       </div>
-      <div class="recipient-add-row">
-        <button type="button" class="small" id="c_to_add">Add</button>
-        <button type="button" class="small" id="c_to_clear">Clear all</button>
-        <span class="hint" id="c_to_hint" style="margin:0"></span>
+      <div class="outreach-list-search">
+        <input id="sentSearch" type="search" placeholder="Search sent mail" autocomplete="off">
+      </div>
+      <div class="outreach-list-body" id="emailRows" role="listbox" aria-label="Sent messages"></div>
+    </aside>
+
+    <section class="outreach-reader" id="reader" aria-live="polite">
+      <div class="reader-empty" id="readerEmpty">
+        <p class="reader-empty-title">No conversation selected</p>
+        <p class="hint">Pick a sent message on the left, or compose a new outreach.</p>
+      </div>
+      <article class="reader-msg" id="readerMsg" hidden>
+        <header class="reader-head">
+          <div class="reader-subject-row">
+            <h2 class="reader-subject" id="r_subject"></h2>
+            <div class="reader-track" id="r_track"></div>
+          </div>
+          <div class="reader-meta">
+            <div class="reader-meta-line"><span class="muted">To</span> <span id="r_to"></span></div>
+            <div class="reader-meta-line"><span class="muted">Date</span> <span id="r_date"></span></div>
+            <div class="reader-meta-line" id="r_job_row" hidden><span class="muted">Job</span> <span id="r_job"></span></div>
+            <div class="reader-meta-line" id="r_status_row"><span class="muted">Status</span> <span id="r_status"></span></div>
+          </div>
+        </header>
+        <div class="reader-body" id="r_body"></div>
+        <p class="hint reader-body-hint" id="r_body_hint" hidden></p>
+      </article>
+    </section>
+  </div>
+
+  <div class="compose-card" id="composeCard" hidden>
+    <div class="compose-card-head">
+      <span class="compose-card-title">New message</span>
+      <div class="compose-card-actions">
+        <button type="button" class="icon-btn compose-min" id="composeMinBtn" data-tip="Minimize" aria-label="Minimize">─</button>
+        <button type="button" class="icon-btn compose-close" id="composeCloseBtn" data-tip="Close" aria-label="Close">×</button>
       </div>
     </div>
 
-    <label class="check-row"><input type="checkbox" id="c_group"> Group email (one message to all)</label>
-    <div class="hint" id="c_sendMode" style="margin:-6px 0 10px"></div>
-
-    <div class="field">
-      <label>Tone (up to 3)</label>
-      <div class="tone-chips" id="c_tones"></div>
-    </div>
-
-    <div class="toolbar">
-      <button class="primary" id="draftBtn">✨ Write with AI</button>
-      <span class="hint" id="draftStatus"></span>
-    </div>
-
-    <div class="field"><label>Subject</label><input id="c_subject"></div>
-    <div class="field">
-      <div class="draft-head">
-        <label>Body</label>
-        <button type="button" class="icon-btn" id="regenBtn" title="Regenerate with AI" aria-label="Regenerate email">↻</button>
+    <div class="compose-card-body" id="composer">
+      <div class="compose-setup grid2">
+        <div class="field"><label>Resume</label><select id="c_resume"></select></div>
+        <div class="field"><label>Job / JD</label><select id="c_job"></select></div>
       </div>
-      <div class="body-wrap" id="c_body_wrap">
-        <textarea id="c_body"></textarea>
+
+      <div class="compose-line" id="c_to_box">
+        <span class="compose-line-label">To</span>
+        <div class="compose-line-main">
+          <div class="recipient-chips" id="c_to_chips"></div>
+          <input id="c_to_input" type="text" placeholder="Recipients" autocomplete="off">
+        </div>
+        <label class="compose-group-toggle" data-tip="Send one message to all recipients" data-tip-pos="below-end">
+          <input type="checkbox" id="c_group" checked>
+          <div>
+            <span>Group</span>
+            <span>Email</span>
+          </div>
+        </label>
+      </div>
+      <span class="hint compose-inline-hint" id="c_to_hint"></span>
+      <button type="button" id="c_to_add" hidden aria-hidden="true">Add</button>
+      <div class="hint" id="c_sendMode" hidden></div>
+
+      <div class="compose-line">
+        <span class="compose-line-label">Subject</span>
+        <input id="c_subject" class="compose-bare-input" type="text" placeholder="Subject">
+      </div>
+
+      <div class="compose-body-wrap body-wrap" id="c_body_wrap">
+        <div class="attach-chips" id="attachChips" hidden></div>
+        <textarea id="c_body" placeholder="Write your message…"></textarea>
         <div class="draft-skel" id="c_body_skel" hidden aria-hidden="true">
           <div class="skel-line w80"></div>
           <div class="skel-line w95"></div>
@@ -53,23 +87,103 @@
           <div class="skel-line w55"></div>
           <div class="skel-pulse">Writing with AI…</div>
         </div>
+
+        <div class="ai-prompt" id="aiPrompt" hidden>
+          <span class="hint ai-prompt-status" id="draftStatus"></span>
+          <div class="ai-prompt-inner" id="aiPromptInner">
+            <span class="ai-prompt-glyph" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M4.2 19.8l1.1-4.5L15.8 4.8a2 2 0 012.8 2.8L8.1 18.1l-3.9 1.7z" stroke="currentColor" stroke-width="1.55" stroke-linejoin="round"/>
+                <path d="M13.2 6.6l3.4 3.4" stroke="currentColor" stroke-width="1.55"/>
+                <path d="M18.6 3.4l.22.95.95.22-.95.22-.22.95-.22-.95-.95-.22.95-.22.22-.95z" fill="currentColor"/>
+                <path d="M21.1 6.6l.16.7.7.16-.7.16-.16.7-.16-.7-.7-.16.7-.16.16-.7z" fill="currentColor"/>
+              </svg>
+            </span>
+            <textarea id="c_context" rows="1" placeholder="Describe your message" aria-label="Describe your message for AI"></textarea>
+            <button type="button" class="ai-prompt-go" id="draftBtn" data-tip="Write with AI" aria-label="Write with AI">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 19V5M12 5l-5.5 5.5M12 5l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="compose-dock">
+        <div class="compose-toolbar">
+          <div class="compose-toolbar-left">
+            <button type="button" class="compose-send" id="sendBtn" data-tip="Send" aria-label="Send" disabled>Send</button>
+
+            <div class="tb-pill" role="toolbar" aria-label="Compose tools">
+              <div class="tb-menu-wrap">
+                <button type="button" class="tb-icon" id="attachBtn" data-tip="Attach files" aria-label="Attach files" aria-haspopup="true" aria-expanded="false">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16.5 7.5l-6.8 6.8a2.5 2.5 0 103.5 3.5l7.2-7.2a4 4 0 10-5.7-5.7L7 12.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="tb-menu" id="attachMenu" hidden role="menu">
+                  <button type="button" class="tb-menu-item" id="attachUploadItem" role="menuitem">Upload from computer…</button>
+                  <div class="tb-menu-sep"></div>
+                  <div class="attach-list" id="attachList" role="group" aria-label="Attached documents"></div>
+                </div>
+                <input type="file" id="attachFileInput" hidden multiple>
+              </div>
+
+              <button type="button" class="tb-icon tb-ai" id="aiToggleBtn" data-tip="Help me write" aria-label="Help me write" aria-pressed="false">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4.2 19.8l1.1-4.5L15.8 4.8a2 2 0 012.8 2.8L8.1 18.1l-3.9 1.7z" stroke="currentColor" stroke-width="1.55" stroke-linejoin="round"/>
+                  <path d="M13.2 6.6l3.4 3.4" stroke="currentColor" stroke-width="1.55"/>
+                  <path d="M18.6 3.2l.22.95.95.22-.95.22-.22.95-.22-.95-.95-.22.95-.22.22-.95z" fill="currentColor"/>
+                </svg>
+              </button>
+
+              <button type="button" class="tb-js" id="trackBtn" data-tip="Open tracking on" aria-label="Email open tracking" aria-pressed="true">JS</button>
+
+              <div class="tb-menu-wrap">
+                <button type="button" class="tb-icon tb-aa" id="formatBtn" data-tip="Formatting options" aria-label="Formatting options" aria-haspopup="true" aria-expanded="false">Aa</button>
+                <div class="tb-format-bar" id="formatMenu" hidden role="toolbar" aria-label="Text formatting">
+                  <button type="button" class="fmt-btn" data-fmt="bold" data-tip="Bold" aria-label="Bold"><b>B</b></button>
+                  <button type="button" class="fmt-btn" data-fmt="italic" data-tip="Italic" aria-label="Italic"><i>I</i></button>
+                  <button type="button" class="fmt-btn" data-fmt="underline" data-tip="Underline" aria-label="Underline"><u>U</u></button>
+                  <span class="fmt-sep"></span>
+                  <button type="button" class="fmt-btn" data-fmt="bullet" data-tip="Bulleted list" aria-label="Bulleted list">≡</button>
+                  <button type="button" class="fmt-btn" data-fmt="number" data-tip="Numbered list" aria-label="Numbered list">1.</button>
+                  <span class="fmt-sep"></span>
+                  <button type="button" class="fmt-btn" data-fmt="undo" data-tip="Undo" aria-label="Undo">↶</button>
+                  <button type="button" class="fmt-btn" data-fmt="redo" data-tip="Redo" aria-label="Redo">↷</button>
+                </div>
+              </div>
+
+              <div class="tb-menu-wrap">
+                <button type="button" class="tb-icon" id="emojiBtn" data-tip="Insert emoji" aria-label="Insert emoji" aria-haspopup="true" aria-expanded="false">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.1" fill="currentColor"/><circle cx="15" cy="10" r="1.1" fill="currentColor"/><path d="M8.2 14.2c1.2 1.5 2.4 2.2 3.8 2.2s2.6-.7 3.8-2.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </button>
+                <div class="tb-emoji-picker" id="emojiMenu" hidden>
+                  <input type="search" id="emojiSearch" class="emoji-search" placeholder="Search" autocomplete="off">
+                  <div class="emoji-cats" id="emojiCats"></div>
+                  <div class="emoji-grid" id="emojiGrid"></div>
+                </div>
+              </div>
+
+              <div class="tb-menu-wrap">
+                <button type="button" class="tb-icon" id="signBtn" data-tip="Insert signature" aria-label="Insert signature" aria-haspopup="true" aria-expanded="false">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20c2.5-1 4-3.2 6.2-7.2C12.5 8.5 14 6 17.5 6c2 0 3 1.2 3 2.8S19.2 12 17 12c-2.8 0-4.2-2-6.5-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M14.5 6.2l2.2 2.2" stroke="currentColor" stroke-width="1.5"/></svg>
+                </button>
+                <div class="tb-menu" id="signMenu" hidden role="menu">
+                  <button type="button" class="tb-menu-item" id="signManageItem" role="menuitem">Manage signature</button>
+                  <div class="tb-menu-sep"></div>
+                  <div id="signMenuList"></div>
+                  <div class="sign-edit" id="signEdit" hidden>
+                    <textarea id="c_signature" rows="3" placeholder="Name · Title · linkedin.com/in/…"></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="tb-icon tb-discard" id="composeDiscardBtn" data-tip="Discard draft" data-tip-pos="end" aria-label="Discard draft">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h14M10 11v6M14 11v6M9 7l1-2h4l1 2M8 7l1 12h6l1-12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="sendres" id="sendres"></div>
       </div>
     </div>
-
-    <div class="field">
-      <label>Signature (appended when the email is sent)</label>
-      <textarea id="c_signature" rows="2" placeholder="Name&#10;Title · linkedin.com/in/… (leave empty → AI writes one)"></textarea>
-    </div>
-
-    <div class="actions">
-      <button class="primary" id="sendBtn" disabled>Send via Gmail</button>
-    </div>
-    <div class="sendres" id="sendres"></div>
   </div>
-
-  <h3 style="margin:18px 0 10px;font-size:14px">Sent log</h3>
-  <table>
-    <thead><tr><th>Date</th><th>To</th><th>Subject</th><th>Job</th><th>Status</th></tr></thead>
-    <tbody id="emailRows"></tbody>
-  </table>
 </div>

@@ -62,6 +62,18 @@ t('buildRfc2822 multi-To and multipart attachment', () => {
   ok(m.includes('filename="resume.pdf"'));
   ok(m.includes('Content-Disposition: attachment'));
 });
+t('buildRfc2822 multiple attachments', () => {
+  const m = buildRfc2822({
+    to: 'a@b.com', from: 'me', subject: 'Hi', body: 'Body',
+    attachments: [
+      { filename: 'resume.pdf', mime: 'application/pdf', dataB64: Buffer.from('PDF').toString('base64') },
+      { filename: 'cover.txt', mime: 'text/plain', dataB64: Buffer.from('cover').toString('base64') },
+    ],
+  });
+  ok(m.includes('filename="resume.pdf"'));
+  ok(m.includes('filename="cover.txt"'));
+  ok((m.match(/Content-Disposition: attachment/g) || []).length === 2);
+});
 t('toBase64Url is URL-safe, unpadded, decodable', () => {
   const s = toBase64Url('sub?ject>>\xff body ~~');
   ok(!/[+/=]/.test(s), `not url-safe: ${s}`);
