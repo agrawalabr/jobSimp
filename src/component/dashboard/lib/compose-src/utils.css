@@ -1,0 +1,488 @@
+/* utils.css — toolbar chrome, pickers, color swatches shell, lists/indent
+ * Search: js-quill-toolbar, ql-picker, ql-color, ql-list, ql-indent, fmt-sep
+ * Dynamic .ql-color-* rules stay in utils.mjs (from COMPOSE_COLORS).
+ */
+
+/* ── Toolbar chrome ───────────────────────────────────────────────────── */
+.js-quill-toolbar {
+  --fmt-hit: 25px;
+  --fmt-ico: 20px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: visible;
+  box-sizing: border-box;
+  color: var(--muted);
+}
+
+.js-quill-toolbar *,
+.js-quill-toolbar *::before,
+.js-quill-toolbar *::after {
+  box-sizing: border-box;
+}
+
+.js-quill-toolbar .ql-formats {
+  margin: 0;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  float: none;
+  gap: 0;
+}
+
+.js-quill-toolbar .fmt-sep {
+  display: inline-block;
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  align-self: center;
+}
+
+.js-quill-toolbar button {
+  float: none;
+  width: var(--fmt-hit);
+  height: var(--fmt-hit);
+  padding: 2px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.js-quill-toolbar button svg,
+.js-quill-toolbar .ql-color-picker .ql-picker-label svg {
+  float: none;
+  display: block;
+  width: var(--fmt-ico);
+  height: var(--fmt-ico);
+  flex: none;
+}
+
+.js-quill-toolbar :is(button:hover, button.ql-active, button:focus) {
+  background: var(--accent-dim);
+  color: var(--accent);
+  outline: none;
+}
+
+.js-quill-toolbar .ql-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.js-quill-toolbar .ql-fill,
+.js-quill-toolbar .ql-thin,
+.js-quill-toolbar .ql-stroke.ql-thin {
+  fill: currentColor;
+  stroke-width: 1;
+}
+
+.js-quill-toolbar .ql-transparent {
+  opacity: 0.4;
+}
+
+/* ── Shared picker shell (font / size / color) ────────────────────────── */
+.js-quill-toolbar .ql-picker {
+  position: relative;
+  float: none;
+  display: inline-block;
+  vertical-align: middle;
+  color: inherit;
+  height: var(--fmt-hit);
+  font-size: 12px;
+}
+
+.js-quill-toolbar .ql-picker-label {
+  position: relative;
+  display: inline-block;
+  height: 100%;
+  width: 100%;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 0 6px;
+  line-height: 22px;
+  text-align: center !important;
+  align-content: space-between !important;
+}
+
+.js-quill-toolbar .ql-picker-no-border {
+  border: none;
+  background: transparent;
+}
+
+.js-quill-toolbar .ql-picker-label:hover,
+.js-quill-toolbar .ql-picker.ql-expanded .ql-picker-label {
+  background: var(--lift);
+  border-color: var(--line);
+}
+
+.js-quill-toolbar .ql-picker-label::before {
+  display: inline-block;
+  line-height: 22px;
+}
+
+.js-quill-toolbar .ql-picker-label svg {
+  display: none;
+}
+
+.js-quill-toolbar .ql-picker-options {
+  display: none;
+  position: absolute;
+  min-width: 100%;
+  white-space: nowrap;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 5px;
+  z-index: 40;
+}
+
+.js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {
+  display: block;
+}
+
+.compose-format .js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {
+  top: auto;
+  bottom: calc(100% + 5px);
+  margin-top: 0;
+  width: 152px;
+}
+
+.sig-editor .js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {
+  top: calc(100% + 4px);
+  bottom: auto;
+}
+
+.js-quill-toolbar .ql-picker-item {
+  display: block;
+  cursor: pointer;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.js-quill-toolbar .ql-picker-item:hover,
+.js-quill-toolbar .ql-picker-item.ql-selected {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.js-quill-toolbar select {
+  display: none;
+}
+
+/* ── Signature toolbar strip ──────────────────────────────────────────── */
+.sig-editor .js-quill-toolbar {
+  flex: 0 0 auto;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #1c2434 0%, #151c2a 100%);
+  overflow: visible;
+  border-radius: 12px 12px 0 0;
+}
+
+/* ── Color picker shell (search: ql-color) ────────────────────────────── */
+.js-quill-toolbar .ql-color-picker {
+  width: var(--fmt-hit);
+}
+
+.js-quill-toolbar .ql-color-picker .ql-picker-label {
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.js-quill-toolbar .ql-color-picker .ql-picker-label svg {
+  display: block;
+}
+
+.js-quill-toolbar .ql-color-picker .ql-picker-options {
+  width: 148px;
+  padding: 3px 5px;
+}
+
+.js-quill-toolbar .ql-color-picker .ql-picker-item {
+  float: left;
+  width: 16px;
+  height: 16px;
+  margin: 2px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+}
+
+.js-quill-toolbar .ql-color-picker .ql-picker-item.ql-selected,
+.js-quill-toolbar .ql-color-picker .ql-picker-item:hover {
+  border-color: #fff;
+}
+
+.js-quill-toolbar .ql-color-picker.ql-color .ql-picker-item {
+  background: #000;
+}
+
+/* ── Lists + indent (search: ql-list, ql-indent, data-list) ───────────── */
+:is(.compose-quill, .sig-quill) .ql-editor ol {
+  padding-left: 1.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li {
+  list-style-type: none;
+  padding-left: 1.5em;
+  position: relative;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li > .ql-ui {
+  position: absolute;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li > .ql-ui:before {
+  display: inline-block;
+  margin-left: -1.5em;
+  margin-right: 0.3em;
+  text-align: right;
+  white-space: nowrap;
+  width: 1.2em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='bullet'] > .ql-ui:before {
+  content: '\2022';
+}
+
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list] {
+    counter-set: list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list] {
+    counter-reset: list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'] {
+  counter-increment: list-0;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'] > .ql-ui:before {
+  content: counter(list-0, decimal) '. ';
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-1 {
+  counter-increment: list-1;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-1 > .ql-ui:before {
+  content: counter(list-1, lower-alpha) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-1 {
+    counter-set: list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-1 {
+    counter-reset: list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-1:not(.ql-direction-rtl) {
+  padding-left: 3em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-1:not(.ql-direction-rtl) {
+  padding-left: 4.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-2 {
+  counter-increment: list-2;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-2 > .ql-ui:before {
+  content: counter(list-2, lower-roman) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-2 {
+    counter-set: list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-2 {
+    counter-reset: list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-2:not(.ql-direction-rtl) {
+  padding-left: 6em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-2:not(.ql-direction-rtl) {
+  padding-left: 7.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-3 {
+  counter-increment: list-3;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-3 > .ql-ui:before {
+  content: counter(list-3, decimal) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-3 {
+    counter-set: list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-3 {
+    counter-reset: list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-3:not(.ql-direction-rtl) {
+  padding-left: 9em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-3:not(.ql-direction-rtl) {
+  padding-left: 10.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-4 {
+  counter-increment: list-4;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-4 > .ql-ui:before {
+  content: counter(list-4, lower-alpha) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-4 {
+    counter-set: list-5 list-6 list-7 list-8 list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-4 {
+    counter-reset: list-5 list-6 list-7 list-8 list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-4:not(.ql-direction-rtl) {
+  padding-left: 12em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-4:not(.ql-direction-rtl) {
+  padding-left: 13.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-5 {
+  counter-increment: list-5;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-5 > .ql-ui:before {
+  content: counter(list-5, lower-roman) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-5 {
+    counter-set: list-6 list-7 list-8 list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-5 {
+    counter-reset: list-6 list-7 list-8 list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-5:not(.ql-direction-rtl) {
+  padding-left: 15em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-5:not(.ql-direction-rtl) {
+  padding-left: 16.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-6 {
+  counter-increment: list-6;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-6 > .ql-ui:before {
+  content: counter(list-6, decimal) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-6 {
+    counter-set: list-7 list-8 list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-6 {
+    counter-reset: list-7 list-8 list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-6:not(.ql-direction-rtl) {
+  padding-left: 18em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-6:not(.ql-direction-rtl) {
+  padding-left: 19.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-7 {
+  counter-increment: list-7;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-7 > .ql-ui:before {
+  content: counter(list-7, lower-alpha) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-7 {
+    counter-set: list-8 list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-7 {
+    counter-reset: list-8 list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-7:not(.ql-direction-rtl) {
+  padding-left: 21em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-7:not(.ql-direction-rtl) {
+  padding-left: 22.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-8 {
+  counter-increment: list-8;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-8 > .ql-ui:before {
+  content: counter(list-8, lower-roman) '. ';
+}
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-8 {
+    counter-set: list-9;
+  }
+}
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-8 {
+    counter-reset: list-9;
+  }
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-8:not(.ql-direction-rtl) {
+  padding-left: 24em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-8:not(.ql-direction-rtl) {
+  padding-left: 25.5em;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-9 {
+  counter-increment: list-9;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-9 > .ql-ui:before {
+  content: counter(list-9, decimal) '. ';
+}
+:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-9:not(.ql-direction-rtl) {
+  padding-left: 27em;
+}
+:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-9:not(.ql-direction-rtl) {
+  padding-left: 28.5em;
+}

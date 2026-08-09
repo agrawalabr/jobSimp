@@ -1,0 +1,8 @@
+/* font.css — static font-picker chrome
+ * Search: ql-font
+ * Dynamic label/family rules stay in font.mjs (from COMPOSE_FONTS).
+ */
+
+.js-quill-toolbar .ql-picker.ql-font {
+  width: 108px;
+}

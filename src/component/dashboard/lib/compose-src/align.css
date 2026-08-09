@@ -1,0 +1,15 @@
+/* align.css — editor text-align classes for the align-cycle control
+ * Search: ql-align-center, ql-align-right, ql-align-justify, data-align-cycle
+ */
+
+:is(.compose-quill, .sig-quill) .ql-editor .ql-align-center {
+  text-align: center;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor .ql-align-right {
+  text-align: right;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor .ql-align-justify {
+  text-align: justify;
+}

@@ -1,5 +1,6 @@
 // Deprecated shim. Domain data lives in IndexedDB via dao (settings/secrets).
 // Prefer settings.getView / settings.putView.
+import { DEFAULT_EMAIL_TONE } from './enums.js';
 import { settings } from '../dao/index.js';
 import { defaultModelFor } from './models.js';
 
@@ -14,7 +15,7 @@ export class ExtStorage {
     },
     app: { onboarded: false, widgetResumeId: null },
     gmail: { enabled: true, fromName: '' },
-    emailTemplate: { tone: 'concise, warm, confident', signature: '' },
+    emailTemplate: { tone: DEFAULT_EMAIL_TONE, signature: '' },
   };
 
   static get() { return settings.getView(); }

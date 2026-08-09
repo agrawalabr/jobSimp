@@ -1,0 +1,44 @@
+/* size.css — static text-style picker chrome + quote/mono editor styles
+ * Search: ql-compose-block, blockquote, code-block
+ * Dynamic mark ::before + heading sizes stay in size.mjs (from COMPOSE_BLOCKS).
+ */
+
+.js-quill-toolbar .ql-picker.ql-compose-block {
+  width: var(--fmt-hit);
+}
+
+.js-quill-toolbar .ql-picker.ql-compose-block .ql-picker-options {
+  min-width: 140px;
+}
+
+.js-quill-toolbar .ql-picker.ql-compose-block svg {
+  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor blockquote {
+  border-left: 4px solid var(--line);
+  color: var(--muted);
+  margin: 5px 0;
+  padding-left: 16px;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor code {
+  background: var(--bg);
+  border-radius: 3px;
+  font-size: 85%;
+  padding: 2px 4px;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor .ql-code-block-container,
+:is(.compose-quill, .sig-quill) .ql-editor pre {
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 3px;
+  margin: 5px 0;
+  padding: 5px 10px;
+  overflow: visible;
+  font-family: monospace;
+}

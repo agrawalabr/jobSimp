@@ -16,16 +16,54 @@ const squash = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
  */
 export function appendSignature(body, signature) {
   const b = String(body || '').replace(/\s+$/, '');
-  const sig = String(signature || '').trim();
+  const sig = signaturePlain(signature);
   if (!sig) return b;
   if (squash(b).endsWith(squash(sig))) return b;
   return `${b}\n\n${sig}`;
 }
 
+/** Strip tags for plain-text signature comparisons / MIME text part. */
+export function signaturePlain(signature) {
+  const s = String(signature || '').trim();
+  if (!s) return '';
+  if (!/<[a-z][\s\S]*>/i.test(s)) return s;
+  return s
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Append signature to an HTML fragment (Quill output). */
+export function appendSignatureHtml(html, signature) {
+  const h = String(html || '').trim();
+  const sig = String(signature || '').trim();
+  if (!sig || !h) return h || '';
+  const plain = signaturePlain(sig);
+  if (plain && squash(h).includes(squash(plain))) return h;
+  if (/<[a-z][\s\S]*>/i.test(sig)) {
+    return `${h}<p><br></p>${sig}`;
+  }
+  const block = sig
+    .split(/\n/)
+    .map((line) => line
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;'))
+    .join('<br>\n');
+  return `${h}<p><br></p><p>${block}</p>`;
+}
+
 /** Remove a trailing signature block, if the body ends with one. */
 export function stripSignature(body, signature) {
   const b = String(body || '').replace(/\s+$/, '');
-  const sig = String(signature || '').trim();
+  const sig = signaturePlain(signature);
   if (!sig || !squash(b).endsWith(squash(sig))) return b;
   const cut = b.lastIndexOf(sig.split('\n')[0]);
   return cut > 0 ? b.slice(0, cut).replace(/\s+$/, '') : b;

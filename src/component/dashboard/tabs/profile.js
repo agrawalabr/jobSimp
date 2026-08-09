@@ -1,12 +1,8 @@
 // Profile tab: Google identity (read-only) + contact and work-auth fields.
+import {
+  PROFILE_CONTACT_KEYS, PROFILE_LINK_KEYS, PROFILE_METRIC_KEYS,
+} from '../../../static/enums.js';
 import { $, send, data, flash } from '../lib/dom.js';
-
-const CONTACT = ['phone', 'address'];
-const LINKS = ['linkedin', 'github', 'portfolio'];
-const METRICS = [
-  'workAuth', 'needsSponsorship', 'salaryExpectation',
-  'relocation', 'ethnicity', 'veteranStatus', 'disabilityStatus',
-];
 
 const val = (key) => $(`pf_${key}`).value.trim();
 const setVal = (key, v) => { $(`pf_${key}`).value = v || ''; };
@@ -23,9 +19,9 @@ async function load() {
   const pic = $('pf_picture');
   if (user?.picture) { pic.src = user.picture; pic.hidden = false; } else { pic.hidden = true; }
 
-  CONTACT.forEach((k) => setVal(k, profile?.[k]));
-  LINKS.forEach((k) => setVal(k, profile?.links?.[k]));
-  METRICS.forEach((k) => setVal(k, metrics?.[k]));
+  PROFILE_CONTACT_KEYS.forEach((k) => setVal(k, profile?.[k]));
+  PROFILE_LINK_KEYS.forEach((k) => setVal(k, profile?.links?.[k]));
+  PROFILE_METRIC_KEYS.forEach((k) => setVal(k, metrics?.[k]));
 }
 
 async function save() {
@@ -33,10 +29,10 @@ async function save() {
   btn.disabled = true;
   const [p, m] = await Promise.all([
     send('profile.update', {
-      ...Object.fromEntries(CONTACT.map((k) => [k, val(k)])),
-      links: Object.fromEntries(LINKS.map((k) => [k, val(k)])),
+      ...Object.fromEntries(PROFILE_CONTACT_KEYS.map((k) => [k, val(k)])),
+      links: Object.fromEntries(PROFILE_LINK_KEYS.map((k) => [k, val(k)])),
     }),
-    send('metrics.update', Object.fromEntries(METRICS.map((k) => [k, val(k)]))),
+    send('metrics.update', Object.fromEntries(PROFILE_METRIC_KEYS.map((k) => [k, val(k)]))),
   ]);
   btn.disabled = false;
 

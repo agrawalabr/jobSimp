@@ -88,7 +88,7 @@ async function saveAll() {
 export async function mount() {
   $('ai_provider').innerHTML = providerOptionsHtml();
   $('keyFields').innerHTML = PROVIDERS
-    .map((p) => `<div class="field"><label>${esc(p.keyLabel)}</label><input type="password" id="key_${esc(p.id)}" autocomplete="off"></div>`)
+    .map((p) => `<div class="field"><label for="key_${esc(p.id)}">${esc(p.keyLabel)}</label><input type="password" id="key_${esc(p.id)}" name="key_${esc(p.id)}" autocomplete="off"></div>`)
     .join('');
 
   $('ai_provider').onchange = () => fillModels($('ai_provider').value);

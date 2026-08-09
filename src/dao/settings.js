@@ -4,6 +4,7 @@
 // fine because these bindings are only used inside methods, not at module eval.
 import { TYPES, SINGLETONS, emptySettings, emptySecrets, pickFields } from './dbModel.js';
 import { defaultModelFor } from '../static/models.js';
+import { normalizeEmailTemplate } from '../static/signatures.js';
 import { getEntity, putEntity } from './idb.js';
 import { secrets } from './secrets.js';
 import { user } from './user.js';
@@ -35,7 +36,29 @@ export class Settings {
     });
     if (patch.gmail) next.gmail = { ...emptySettings().gmail, ...(cur.gmail || {}), ...patch.gmail };
     if (patch.emailTemplate) {
-      next.emailTemplate = { ...emptySettings().emailTemplate, ...(cur.emailTemplate || {}), ...patch.emailTemplate };
+      const curT = normalizeEmailTemplate(cur.emailTemplate || {});
+      const incoming = { ...patch.emailTemplate };
+      // Settings UI may only patch `signature` text — fold it into the active (or first) entry.
+      if (incoming.signature != null && !incoming.signatures) {
+        let sigs = [...(curT.signatures || [])];
+        if (!sigs.length) {
+          if (String(incoming.signature).trim()) {
+            const id = `sig_${Date.now().toString(36)}`;
+            sigs = [{ id, title: 'Default', body: String(incoming.signature) }];
+            incoming.activeSignatureId = incoming.activeSignatureId ?? id;
+          }
+        } else {
+          const aid = curT.activeSignatureId || sigs[0].id;
+          sigs = sigs.map((s) => (s.id === aid ? { ...s, body: String(incoming.signature) } : s));
+          incoming.activeSignatureId = incoming.activeSignatureId ?? aid;
+        }
+        incoming.signatures = sigs;
+      }
+      next.emailTemplate = normalizeEmailTemplate({
+        ...emptySettings().emailTemplate,
+        ...curT,
+        ...incoming,
+      });
     }
     delete next.id;
     delete next.type;
@@ -69,7 +92,10 @@ export class Settings {
         widgetResumeId: s.widgetResumeId || null,
       },
       gmail: { ...emptySettings().gmail, ...(s.gmail || {}) },
-      emailTemplate: { ...emptySettings().emailTemplate, ...(s.emailTemplate || {}) },
+      emailTemplate: normalizeEmailTemplate({
+        ...emptySettings().emailTemplate,
+        ...(s.emailTemplate || {}),
+      }),
     };
   }
 

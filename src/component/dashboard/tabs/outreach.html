@@ -9,7 +9,7 @@
         <button type="button" class="primary" id="composeOpenBtn" data-tip="Compose new message" aria-label="Compose new message">Compose</button>
       </div>
       <div class="outreach-list-search">
-        <input id="sentSearch" type="search" placeholder="Search sent mail" autocomplete="off">
+        <input id="sentSearch" name="sentSearch" type="search" placeholder="Search sent mail" autocomplete="off" aria-label="Search sent mail">
       </div>
       <div class="outreach-list-body" id="emailRows" role="listbox" aria-label="Sent messages"></div>
     </aside>
@@ -49,18 +49,18 @@
 
     <div class="compose-card-body" id="composer">
       <div class="compose-setup grid2">
-        <div class="field"><label>Resume</label><select id="c_resume"></select></div>
-        <div class="field"><label>Job / JD</label><select id="c_job"></select></div>
+        <div class="field"><label for="c_resume">Resume</label><select id="c_resume"></select></div>
+        <div class="field"><label for="c_job">Job / JD</label><select id="c_job"></select></div>
       </div>
 
       <div class="compose-line" id="c_to_box">
         <span class="compose-line-label">To</span>
         <div class="compose-line-main">
           <div class="recipient-chips" id="c_to_chips"></div>
-          <input id="c_to_input" type="text" placeholder="Recipients" autocomplete="off">
+          <input id="c_to_input" name="to" type="text" placeholder="Recipients" autocomplete="off" aria-label="To">
         </div>
         <label class="compose-group-toggle" data-tip="Send one message to all recipients" data-tip-pos="below-end">
-          <input type="checkbox" id="c_group" checked>
+          <input type="checkbox" id="c_group" name="group" checked>
           <div>
             <span>Group</span>
             <span>Email</span>
@@ -73,19 +73,21 @@
 
       <div class="compose-line">
         <span class="compose-line-label">Subject</span>
-        <input id="c_subject" class="compose-bare-input" type="text" placeholder="Subject">
+        <input id="c_subject" name="subject" class="compose-bare-input" type="text" placeholder="Subject" aria-label="Subject">
       </div>
 
       <div class="compose-body-wrap body-wrap" id="c_body_wrap">
-        <div class="attach-chips" id="attachChips" hidden></div>
-        <textarea id="c_body" placeholder="Write your message…"></textarea>
-        <div class="draft-skel" id="c_body_skel" hidden aria-hidden="true">
-          <div class="skel-line w80"></div>
-          <div class="skel-line w95"></div>
-          <div class="skel-line w70"></div>
-          <div class="skel-line w90"></div>
-          <div class="skel-line w55"></div>
-          <div class="skel-pulse">Writing with AI…</div>
+        <div class="compose-body-scroll" id="c_body_scroll">
+          <div class="draft-skel" id="c_body_skel" hidden aria-hidden="true">
+            <div class="skel-line w80"></div>
+            <div class="skel-line w95"></div>
+            <div class="skel-line w70"></div>
+            <div class="skel-line w90"></div>
+            <div class="skel-line w55"></div>
+            <div class="skel-pulse">Writing with AI…</div>
+          </div>
+          <div id="c_body" class="compose-quill" aria-label="Message body"></div>
+          <div class="attach-chips" id="attachChips" hidden></div>
         </div>
 
         <div class="ai-prompt" id="aiPrompt" hidden>
@@ -99,12 +101,20 @@
                 <path d="M21.1 6.6l.16.7.7.16-.7.16-.16.7-.16-.7-.7-.16.7-.16.16-.7z" fill="currentColor"/>
               </svg>
             </span>
-            <textarea id="c_context" rows="1" placeholder="Describe your message" aria-label="Describe your message for AI"></textarea>
+            <textarea id="c_context" name="ai_context" rows="1" placeholder="Describe your message" aria-label="Describe your message for AI"></textarea>
             <button type="button" class="ai-prompt-go" id="draftBtn" data-tip="Write with AI" aria-label="Write with AI">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 19V5M12 5l-5.5 5.5M12 5l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
+          </div>
+        </div>
+
+        <!-- Toolbar controls assembled by editor.mjs from font/size/utils/align modules. -->
+        <div class="compose-format" id="formatMenu" hidden>
+          <div class="compose-format-inner">
+            <div id="quillToolbar" class="js-quill-toolbar" role="toolbar" aria-label="Text formatting"></div>
+            <button type="button" class="compose-format-close" id="formatCloseBtn" data-tip="Close" aria-label="Close formatting">×</button>
           </div>
         </div>
       </div>
@@ -124,7 +134,7 @@
                   <div class="tb-menu-sep"></div>
                   <div class="attach-list" id="attachList" role="group" aria-label="Attached documents"></div>
                 </div>
-                <input type="file" id="attachFileInput" hidden multiple>
+                <input type="file" id="attachFileInput" name="attachments" hidden multiple aria-label="Upload attachments">
               </div>
 
               <button type="button" class="tb-icon tb-ai" id="aiToggleBtn" data-tip="Help me write" aria-label="Help me write" aria-pressed="false">
@@ -137,43 +147,29 @@
 
               <button type="button" class="tb-js" id="trackBtn" data-tip="Open tracking on" aria-label="Email open tracking" aria-pressed="true">JS</button>
 
-              <div class="tb-menu-wrap">
-                <button type="button" class="tb-icon tb-aa" id="formatBtn" data-tip="Formatting options" aria-label="Formatting options" aria-haspopup="true" aria-expanded="false">Aa</button>
-                <div class="tb-format-bar" id="formatMenu" hidden role="toolbar" aria-label="Text formatting">
-                  <button type="button" class="fmt-btn" data-fmt="bold" data-tip="Bold" aria-label="Bold"><b>B</b></button>
-                  <button type="button" class="fmt-btn" data-fmt="italic" data-tip="Italic" aria-label="Italic"><i>I</i></button>
-                  <button type="button" class="fmt-btn" data-fmt="underline" data-tip="Underline" aria-label="Underline"><u>U</u></button>
-                  <span class="fmt-sep"></span>
-                  <button type="button" class="fmt-btn" data-fmt="bullet" data-tip="Bulleted list" aria-label="Bulleted list">≡</button>
-                  <button type="button" class="fmt-btn" data-fmt="number" data-tip="Numbered list" aria-label="Numbered list">1.</button>
-                  <span class="fmt-sep"></span>
-                  <button type="button" class="fmt-btn" data-fmt="undo" data-tip="Undo" aria-label="Undo">↶</button>
-                  <button type="button" class="fmt-btn" data-fmt="redo" data-tip="Redo" aria-label="Redo">↷</button>
-                </div>
-              </div>
+              <button type="button" class="tb-icon tb-aa" id="formatBtn" data-tip="Formatting options" aria-label="Formatting options" aria-haspopup="true" aria-expanded="false">Aa</button>
 
               <div class="tb-menu-wrap">
                 <button type="button" class="tb-icon" id="emojiBtn" data-tip="Insert emoji" aria-label="Insert emoji" aria-haspopup="true" aria-expanded="false">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.1" fill="currentColor"/><circle cx="15" cy="10" r="1.1" fill="currentColor"/><path d="M8.2 14.2c1.2 1.5 2.4 2.2 3.8 2.2s2.6-.7 3.8-2.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                 </button>
                 <div class="tb-emoji-picker" id="emojiMenu" hidden>
-                  <input type="search" id="emojiSearch" class="emoji-search" placeholder="Search" autocomplete="off">
-                  <div class="emoji-cats" id="emojiCats"></div>
-                  <div class="emoji-grid" id="emojiGrid"></div>
+                  <div class="tb-emoji-head">
+                    <span class="tb-emoji-title">Emoji</span>
+                    <button type="button" class="tb-emoji-close" id="emojiCloseBtn" data-tip="Close" aria-label="Close emoji picker">×</button>
+                  </div>
+                  <div id="emojiPickerHost"></div>
                 </div>
               </div>
 
               <div class="tb-menu-wrap">
-                <button type="button" class="tb-icon" id="signBtn" data-tip="Insert signature" aria-label="Insert signature" aria-haspopup="true" aria-expanded="false">
+                <button type="button" class="tb-icon" id="signBtn" data-tip="Signature" aria-label="Signature" aria-haspopup="true" aria-expanded="false">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20c2.5-1 4-3.2 6.2-7.2C12.5 8.5 14 6 17.5 6c2 0 3 1.2 3 2.8S19.2 12 17 12c-2.8 0-4.2-2-6.5-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M14.5 6.2l2.2 2.2" stroke="currentColor" stroke-width="1.5"/></svg>
                 </button>
                 <div class="tb-menu" id="signMenu" hidden role="menu">
-                  <button type="button" class="tb-menu-item" id="signManageItem" role="menuitem">Manage signature</button>
+                  <button type="button" class="tb-menu-item" id="signManageItem" role="menuitem">Manage signatures…</button>
                   <div class="tb-menu-sep"></div>
                   <div id="signMenuList"></div>
-                  <div class="sign-edit" id="signEdit" hidden>
-                    <textarea id="c_signature" rows="3" placeholder="Name · Title · linkedin.com/in/…"></textarea>
-                  </div>
                 </div>
               </div>
             </div>
@@ -183,6 +179,52 @@
           </button>
         </div>
         <div class="sendres" id="sendres"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal doc-viewer" id="docViewer" role="dialog" aria-modal="true" aria-labelledby="docViewerTitle">
+    <div class="doc-viewer-card">
+      <div class="doc-viewer-head">
+        <span class="doc-viewer-title" id="docViewerTitle">Document</span>
+        <button type="button" class="icon-btn" id="docViewerClose" data-tip="Close" aria-label="Close preview">×</button>
+      </div>
+      <div class="doc-viewer-body" id="docViewerBody"></div>
+    </div>
+  </div>
+
+  <div class="modal sig-manager" id="sigManager" role="dialog" aria-modal="true" aria-labelledby="sigManagerTitle">
+    <div class="modal-card sig-manager-card">
+      <div class="doc-viewer-head">
+        <span class="doc-viewer-title" id="sigManagerTitle">Manage signatures</span>
+        <button type="button" class="icon-btn" id="sigManagerClose" data-tip="Close" aria-label="Close">×</button>
+      </div>
+      <div class="sig-manager-body">
+        <aside class="sig-manager-list-wrap">
+          <div class="sig-manager-list" id="sigManagerList" role="listbox" aria-label="Signatures"></div>
+          <button type="button" class="ghost-btn" id="sigAddBtn">+ Add signature</button>
+        </aside>
+        <div class="sig-manager-edit" id="sigManagerEdit">
+          <div class="sig-manager-empty" id="sigManagerEmpty" hidden>
+            <p class="sig-manager-empty-title">No signatures yet</p>
+            <p class="hint">Click <strong>+ Add signature</strong> to create your first one.</p>
+          </div>
+          <div class="sig-manager-fields" id="sigManagerFields">
+            <div class="field"><label for="sigEditTitle">Title / alias</label><input id="sigEditTitle" placeholder="e.g. Professional" autocomplete="off"></div>
+            <div class="field sig-body-field">
+              <span class="field-label" id="sigBodyLabel">Signature</span>
+              <div class="sig-editor">
+                <div id="sigQuillToolbar" class="js-quill-toolbar" role="toolbar" aria-label="Signature formatting"></div>
+                <div id="sigEditBody" class="sig-quill" role="textbox" aria-multiline="true" aria-labelledby="sigBodyLabel"></div>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" id="sigDeleteBtn">Delete</button>
+              <span class="hint" id="sigSaveMsg"></span>
+              <button type="button" class="primary" id="sigSaveBtn">Save</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

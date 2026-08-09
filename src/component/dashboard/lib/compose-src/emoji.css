@@ -1,0 +1,67 @@
+/* emoji.css — emoji-mart panel chrome (host markup stays in outreach.html)
+ * Search: tb-emoji-picker, em-emoji-picker, emojiCloseBtn
+ */
+
+.tb-emoji-picker {
+  transform: scale(0.85);
+  transform-origin: bottom left;
+  position: absolute;
+  left: -56px;
+  bottom: calc(100% - 10px);
+  z-index: 40;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+}
+
+.tb-emoji-picker[hidden] {
+  display: none !important;
+}
+
+.tb-emoji-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.tb-emoji-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.tb-emoji-close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tb-emoji-close:hover {
+  background: var(--lift);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.tb-emoji-picker em-emoji-picker {
+  height: 360px;
+  width: min(352px, calc(100vw - 40px));
+  --rgb-background: 26, 33, 48;
+  --rgb-input: 15, 20, 32;
+  --rgb-color: 232, 236, 244;
+  --rgb-accent: 79, 142, 247;
+  border: none !important;
+}

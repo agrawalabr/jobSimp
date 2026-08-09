@@ -2,8 +2,8 @@
   <div class="stats" id="stats"></div>
   <div class="toolbar">
     <button class="primary" id="addJob">+ Add Job</button>
-    <input type="search" id="q" placeholder="Search…">
-    <select id="fStatus"><option value="">All statuses</option></select>
+    <input type="search" id="q" name="q" placeholder="Search…" aria-label="Search jobs">
+    <select id="fStatus" name="fStatus" aria-label="Filter by status"><option value="">All statuses</option></select>
   </div>
   <table>
     <thead><tr>
@@ -19,22 +19,22 @@
   <div class="modal-card">
     <h2 id="modalTitle" style="font-size:16px;margin-bottom:14px;color:inherit">Add Job</h2>
     <div class="grid2">
-      <div class="field"><label>Company *</label><input id="m_company"></div>
-      <div class="field"><label>Role *</label><input id="m_role"></div>
-      <div class="field"><label>Type</label><select id="m_type"></select></div>
-      <div class="field"><label>Date applied</label><input type="date" id="m_date"></div>
-      <div class="field"><label>Date posted</label><input type="date" id="m_datePosted"></div>
-      <div class="field"><label>Status</label><select id="m_status"></select></div>
-      <div class="field"><label>Sponsorship</label><select id="m_sponsorship"></select></div>
-      <div class="field"><label>E-Verify</label><select id="m_everify"></select></div>
-      <div class="field"><label>Follow-up date</label><input type="date" id="m_followup"></div>
-      <div class="field"><label>Referral</label><select id="m_referral"></select></div>
-      <div class="field"><label>Location</label><input id="m_location"></div>
-      <div class="field"><label>Salary</label><input id="m_salary"></div>
+      <div class="field"><label for="m_company">Company *</label><input id="m_company"></div>
+      <div class="field"><label for="m_role">Role *</label><input id="m_role"></div>
+      <div class="field"><label for="m_type">Type</label><select id="m_type"></select></div>
+      <div class="field"><label for="m_date">Date applied</label><input type="date" id="m_date"></div>
+      <div class="field"><label for="m_datePosted">Date posted</label><input type="date" id="m_datePosted"></div>
+      <div class="field"><label for="m_status">Status</label><select id="m_status"></select></div>
+      <div class="field"><label for="m_sponsorship">Sponsorship</label><select id="m_sponsorship"></select></div>
+      <div class="field"><label for="m_everify">E-Verify</label><select id="m_everify"></select></div>
+      <div class="field"><label for="m_followup">Follow-up date</label><input type="date" id="m_followup"></div>
+      <div class="field"><label for="m_referral">Referral</label><select id="m_referral"></select></div>
+      <div class="field"><label for="m_location">Location</label><input id="m_location"></div>
+      <div class="field"><label for="m_salary">Salary</label><input id="m_salary"></div>
     </div>
-    <div class="field"><label>URL</label><input id="m_url"></div>
-    <div class="field"><label>JD text (powers AI drafting)</label><textarea id="m_jd" rows="4"></textarea></div>
-    <div class="field"><label>Notes</label><textarea id="m_notes" rows="2"></textarea></div>
+    <div class="field"><label for="m_url">URL</label><input id="m_url"></div>
+    <div class="field"><label for="m_jd">JD text (powers AI drafting)</label><textarea id="m_jd" rows="4"></textarea></div>
+    <div class="field"><label for="m_notes">Notes</label><textarea id="m_notes" rows="2"></textarea></div>
     <div class="err" id="m_err"></div>
     <div class="actions">
       <button id="cancelBtn">Cancel</button>

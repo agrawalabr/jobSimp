@@ -2,7 +2,7 @@
 // Model: src/dao/<resource>.js classes (get/post/put/delete).
 
 import {
-  draftEmail, personalizeBody, appendSignature, ensureNamePlaceholder, generalizeGreeting,
+  draftEmail, personalizeBody, appendSignature, appendSignatureHtml, ensureNamePlaceholder, generalizeGreeting,
 } from '../service/email.js';
 import { parseResume } from '../service/resume.js';
 import { sendEmail, b64, isAuthFailure, hardenSentCopy, findSentMessageByBeacon, getGmailMessage } from '../service/gmail.js';
@@ -245,7 +245,7 @@ chrome.alarms?.onAlarm?.addListener((alarm) => {
 
 /** Send one message and persist its log row. Never throws. */
 async function sendAndLog({
-  to, toName, body, subject, jobId, provider, resumeId, attached, fromName, attachments, beaconId,
+  to, toName, body, bodyHtml, subject, jobId, provider, resumeId, attached, fromName, attachments, beaconId,
 }) {
   const toStr = Array.isArray(to) ? to.join(', ') : to;
   const bid = beaconId || '';
@@ -264,7 +264,7 @@ async function sendAndLog({
   };
   try {
     const sent = await sendEmail({
-      to, subject, body, fromName, attachments, beaconId: beaconId || undefined,
+      to, subject, body, bodyHtml, fromName, attachments, beaconId: beaconId || undefined,
     });
     rec.gmailId = sent.id;
     rec.status = 'sent';
@@ -595,10 +595,22 @@ const handlers = {
     // Signature is applied HERE, not at draft time, so edits to it take effect.
     // The greeting placeholder is re-derived here too: the recipient list can
     // change after drafting, which invalidates the model's draft-time choice.
-    let body = String(p.body);
+    let body = String(p.body || '');
+    let bodyHtml = String(p.bodyHtml || '').trim();
+    const sig = p.signature ?? s.emailTemplate?.signature ?? '';
     if (fanOut) body = ensureNamePlaceholder(body);
     if (group) body = generalizeGreeting(body, list.map(recipientGreetingName));
-    body = appendSignature(body, p.signature ?? s.emailTemplate?.signature ?? '');
+    body = appendSignature(body, sig);
+
+    // Rich HTML from Quill: keep when structural greeting rewrites aren't required,
+    // or when {{name}} is already present for fan-out.
+    if (bodyHtml) {
+      if (fanOut && !bodyHtml.includes('{{name}}')) bodyHtml = '';
+      else {
+        if (group) bodyHtml = generalizeGreeting(bodyHtml, list.map(recipientGreetingName));
+        bodyHtml = appendSignatureHtml(bodyHtml, sig);
+      }
+    }
 
     const attachments = [];
     const wantResume = !!p.attach;
@@ -650,6 +662,7 @@ const handlers = {
         to: toList,
         toName: list.map((r) => (recipientGreetingName(r) ? r.text : '')).filter(Boolean).join(', '),
         body: personalizeBody(body, ''),
+        bodyHtml: bodyHtml ? personalizeBody(bodyHtml, '') : '',
         beaconId,
       })];
     }
@@ -669,6 +682,7 @@ const handlers = {
         to: r.email,
         toName: greeting ? r.text : '',
         body: personalizeBody(body, greeting),
+        bodyHtml: bodyHtml ? personalizeBody(bodyHtml, greeting) : '',
         beaconId,
       });
       results.push(out);

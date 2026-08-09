@@ -118,8 +118,7 @@ async function migrateExtStorageOnce() {
       model: d.llm?.model || defaultModelFor(provider),
       gmail: { enabled: true, fromName: '', ...(d.gmail || {}) },
       emailTemplate: {
-        tone: 'concise, warm, confident',
-        signature: '',
+        ...emptySettings().emailTemplate,
         ...(d.emailTemplate || {}),
       },
       onboarded: !!d.app?.onboarded,

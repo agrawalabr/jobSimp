@@ -42,8 +42,13 @@ export function bodyToHtml(body, beaconId) {
     .split(/\n{2,}/)
     .map((block) => `<p>${escHtml(block).replace(/\n/g, '<br>\n')}</p>`)
     .join('\n');
+  return wrapHtmlDocument(htmlBody, beaconId);
+}
+
+/** Wrap an HTML fragment (e.g. Quill output) as a full document + optional pixel. */
+export function wrapHtmlDocument(fragment, beaconId) {
   const pixel = beaconId ? `\n${pixelHtml(beaconId)}` : '';
-  return `<!DOCTYPE html><html><body>${htmlBody}${pixel}</body></html>`;
+  return `<!DOCTYPE html><html><body>${fragment || ''}${pixel}</body></html>`;
 }
 
 function altBoundary() {
@@ -55,9 +60,11 @@ function mixedBoundary() {
 }
 
 /** multipart/alternative: text/plain + text/html (with optional pixel). */
-function buildAlternativeParts(body, beaconId) {
+function buildAlternativeParts(body, beaconId, bodyHtml) {
   const boundary = altBoundary();
-  const html = bodyToHtml(body, beaconId);
+  const html = bodyHtml
+    ? wrapHtmlDocument(bodyHtml, beaconId)
+    : bodyToHtml(body, beaconId);
   return {
     boundary,
     raw: [
@@ -84,7 +91,7 @@ function buildAlternativeParts(body, beaconId) {
  * and/or `attachments` (array). Optional beaconId embeds open-tracking pixel.
  * `to` may be a string or string[].
  */
-export function buildRfc2822({ to, from, fromName, subject, body, attachment, attachments, beaconId }) {
+export function buildRfc2822({ to, from, fromName, subject, body, bodyHtml, attachment, attachments, beaconId }) {
   const fromHeader = fromName ? `${fromName} <${from}>` : from;
   const headers = [
     `To: ${toHeaderValue(to)}`,
@@ -93,7 +100,7 @@ export function buildRfc2822({ to, from, fromName, subject, body, attachment, at
     'MIME-Version: 1.0',
   ];
 
-  const alt = buildAlternativeParts(String(body || ''), beaconId || '');
+  const alt = buildAlternativeParts(String(body || ''), beaconId || '', bodyHtml || '');
   const files = [
     ...(Array.isArray(attachments) ? attachments : []),
     ...(attachment?.dataB64 ? [attachment] : []),
@@ -147,10 +154,10 @@ export async function getAuthToken(interactive = true) {
   return getAccessToken(interactive);
 }
 
-export async function sendEmail({ to, subject, body, fromName, attachment, attachments, beaconId }) {
+export async function sendEmail({ to, subject, body, bodyHtml, fromName, attachment, attachments, beaconId }) {
   const token = await getAccessToken(true);
   const raw = toBase64Url(buildRfc2822({
-    to, from: 'me', fromName, subject, body, attachment, attachments, beaconId,
+    to, from: 'me', fromName, subject, body, bodyHtml, attachment, attachments, beaconId,
   }));
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',

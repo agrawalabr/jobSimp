@@ -1,7 +1,6 @@
 // Resume tab: upload / paste, parse via LLM, edit the parsed graph.
+import { MIME, RESUME_ACCEPT } from '../../../static/enums.js';
 import { $, send, data, esc, flash } from '../lib/dom.js';
-
-const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 let editResumeId = null;
 let editSkills = [];
@@ -58,21 +57,21 @@ async function saveFiles(fileList) {
 
   for (const f of fileList) {
     try {
-      const isDocx = f.type === DOCX_MIME || /\.docx$/i.test(f.name);
-      const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      const isDocx = f.type === MIME.DOCX || /\.docx$/i.test(f.name);
+      const isPdf = f.type === MIME.PDF || /\.pdf$/i.test(f.name);
       let payload;
 
       if (isPdf || isDocx) {
         payload = {
           name: f.name.replace(/\.(pdf|docx)$/i, ''),
-          mime: isDocx ? DOCX_MIME : 'application/pdf',
+          mime: isDocx ? MIME.DOCX : MIME.PDF,
           dataB64: bytesToB64(new Uint8Array(await f.arrayBuffer())),
           text: '',
         };
-      } else if (f.type === 'text/plain' || /\.txt$/i.test(f.name)) {
+      } else if (f.type === MIME.TXT || /\.txt$/i.test(f.name)) {
         payload = {
           name: f.name.replace(/\.txt$/i, ''),
-          mime: 'text/plain',
+          mime: MIME.TXT,
           dataB64: '',
           text: await f.text(),
         };
@@ -196,6 +195,8 @@ async function onListClick(e) {
 
 export async function mount() {
   const dropZone = $('dropZone');
+  const resumeFile = $('resumeFile');
+  if (resumeFile) resumeFile.accept = RESUME_ACCEPT;
   ['dragenter', 'dragover'].forEach((ev) => {
     dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
   });
@@ -221,7 +222,7 @@ export async function mount() {
     if (!text) { $('resumeErr').textContent = 'Paste some resume text first.'; return; }
     const res = await send('resumes.save', {
       name: $('pasteName').value.trim() || 'Pasted resume',
-      mime: 'text/plain',
+      mime: MIME.TXT,
       dataB64: '',
       text: $('pasteText').value,
     });

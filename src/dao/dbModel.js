@@ -6,7 +6,7 @@
 //
 // settings/secrets live in IndexedDB (Story B). ExtStorage domain usage retired.
 
-import { JOB_STATUSES, EMPLOYMENT_TYPES, TRISTATE, REFERRAL } from '../static/enums.js';
+import { JOB_STATUSES, EMPLOYMENT_TYPES, TRISTATE, REFERRAL, DEFAULT_EMAIL_TONE } from '../static/enums.js';
 
 /** Entity type strings (= object store names for domain data). */
 export const TYPES = Object.freeze({
@@ -213,7 +213,12 @@ export function emptySettings(partial = {}) {
     provider: 'gemini',
     model: '',
     gmail: { enabled: true, fromName: '' },
-    emailTemplate: { tone: 'concise, warm, confident', signature: '' },
+    emailTemplate: {
+      tone: DEFAULT_EMAIL_TONE,
+      signature: '',
+      signatures: [],
+      activeSignatureId: '',
+    },
     onboarded: false,
     widgetResumeId: null,
     ...partial,

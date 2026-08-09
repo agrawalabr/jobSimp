@@ -9,13 +9,10 @@
 // Both are loaded lazily on first activation and cached, so opening the
 // dashboard costs one small fetch instead of parsing every panel up front.
 
+import { MAIN_TABS, ACCOUNT_TABS, DEFAULT_TAB } from '../../static/enums.js';
 import { $, $$, send } from './lib/dom.js';
 
-const MAIN_TABS = ['tracker', 'outreach'];
-const ACCOUNT_TABS = ['profile', 'resume', 'settings'];
 const ALL_TABS = new Set([...MAIN_TABS, ...ACCOUNT_TABS]);
-const DEFAULT_TAB = 'tracker';
-
 const htmlCache = new Map();
 const moduleCache = new Map();
 

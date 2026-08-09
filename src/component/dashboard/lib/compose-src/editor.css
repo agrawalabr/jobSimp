@@ -1,0 +1,116 @@
+/* editor.css — Quill host shell (compose-quill / sig-quill)
+ * Search: compose-quill, sig-quill, ql-editor, ql-blank, ql-clipboard
+ */
+
+:is(.compose-quill, .sig-quill) {
+  box-sizing: border-box;
+  position: relative;
+  margin: 0;
+  height: auto;
+  font-family: inherit;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+:is(.compose-quill, .sig-quill) > .ql-toolbar,
+:is(.compose-quill, .sig-quill) > .ql-tooltip {
+  display: none;
+}
+
+:is(.compose-quill, .sig-quill) .ql-hidden {
+  display: none;
+}
+
+:is(.compose-quill, .sig-quill) .ql-clipboard {
+  left: -100000px;
+  height: 1px;
+  overflow-y: hidden;
+  position: absolute;
+  top: 50%;
+}
+
+:is(.compose-quill, .sig-quill) .ql-clipboard p {
+  margin: 0;
+  padding: 0;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor {
+  box-sizing: border-box;
+  position: relative;
+  counter-reset: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  height: auto;
+  outline: none;
+  overflow-y: visible;
+  padding: 12px 14px;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  text-align: left;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text);
+  line-height: 1.5;
+  font-family: inherit;
+  font-size: 13px;
+  border: none;
+  cursor: text;
+}
+
+.compose-quill .ql-editor {
+  min-height: var(--compose-skel-h, 148px);
+}
+
+.sig-quill .ql-editor {
+  min-height: 140px;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor > * {
+  cursor: text;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor p,
+:is(.compose-quill, .sig-quill) .ql-editor ol,
+:is(.compose-quill, .sig-quill) .ql-editor pre,
+:is(.compose-quill, .sig-quill) .ql-editor blockquote,
+:is(.compose-quill, .sig-quill) .ql-editor h1,
+:is(.compose-quill, .sig-quill) .ql-editor h2,
+:is(.compose-quill, .sig-quill) .ql-editor h3,
+:is(.compose-quill, .sig-quill) .ql-editor h4,
+:is(.compose-quill, .sig-quill) .ql-editor h5,
+:is(.compose-quill, .sig-quill) .ql-editor h6 {
+  margin: 0;
+  padding: 0;
+}
+
+@supports (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor :is(p, h1, h2, h3, h4, h5, h6) {
+    counter-set: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+
+@supports not (counter-set: none) {
+  :is(.compose-quill, .sig-quill) .ql-editor :is(p, h1, h2, h3, h4, h5, h6) {
+    counter-reset: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
+  }
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor.ql-blank::before {
+  color: var(--muted);
+  content: attr(data-placeholder);
+  font-style: normal;
+  left: 14px;
+  right: 14px;
+  pointer-events: none;
+  position: absolute;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+:is(.compose-quill, .sig-quill) .ql-editor img {
+  display: block;
+  max-width: 100%;
+}

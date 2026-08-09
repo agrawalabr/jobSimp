@@ -1,23 +1,24 @@
 // Tracker tab: the applications table + the add/edit modal.
 import {
   JOB_STATUSES, ACTIVE_STATUSES, EMPLOYMENT_TYPES, TRISTATE, REFERRAL,
+  RESPONSE_STATUSES, JOB_STATUS, YES, NO, UNKNOWN, TAB,
 } from '../../../static/enums.js';
 import { $, send, data, esc, fillOptions } from '../lib/dom.js';
 
 let jobs = [];
 let editId = null;
 
-const yn = (v) => (v === 'Yes'
-  ? '<span class="yes">Yes</span>'
-  : v === 'No' ? '<span class="no">No</span>' : '<span class="unk">?</span>');
+const yn = (v) => (v === YES
+  ? `<span class="yes">${YES}</span>`
+  : v === NO ? `<span class="no">${NO}</span>` : '<span class="unk">?</span>');
 
 function renderStats() {
-  const replied = jobs.filter((j) => [...ACTIVE_STATUSES, 'Offer', 'Rejected'].includes(j.status)).length;
+  const replied = jobs.filter((j) => RESPONSE_STATUSES.includes(j.status)).length;
   $('stats').innerHTML = [
     ['Total', jobs.length],
     ['Active', jobs.filter((j) => ACTIVE_STATUSES.includes(j.status)).length],
-    ['Offers', jobs.filter((j) => j.status === 'Offer').length],
-    ['Sponsor ✓', jobs.filter((j) => j.sponsorship === 'Yes').length],
+    ['Offers', jobs.filter((j) => j.status === JOB_STATUS.OFFER).length],
+    ['Sponsor ✓', jobs.filter((j) => j.sponsorship === YES).length],
     ['Response rate', jobs.length ? `${Math.round((replied / jobs.length) * 100)}%` : '–'],
   ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 }
@@ -36,7 +37,7 @@ function render() {
     <td><strong>${esc(j.company) || '<span class="unk">—</span>'}</strong>${
   j.url ? ` <a href="${esc(j.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">↗</a>` : ''}</td>
     <td>${esc(j.role)}</td>
-    <td>${j.type && j.type !== 'Unknown' ? `<span class="badge">${esc(j.type)}</span>` : '<span class="unk">—</span>'}</td>
+    <td>${j.type && j.type !== UNKNOWN ? `<span class="badge">${esc(j.type)}</span>` : '<span class="unk">—</span>'}</td>
     <td><span class="badge">${esc(j.status)}</span></td>
     <td>${yn(j.sponsorship)}</td><td>${yn(j.everify)}</td>
     <td>${esc(j.location) || '<span class="unk">—</span>'}</td>
@@ -44,7 +45,7 @@ function render() {
     <td>${j.followup
     ? (j.followup <= today ? `<span style="color:var(--yellow);font-weight:600">⚠ ${esc(j.followup)}</span>` : esc(j.followup))
     : ''}</td>
-    <td>${j.referral === 'Yes' ? '✓' : ''}</td>
+    <td>${j.referral === YES ? '✓' : ''}</td>
     <td>
       <button class="small" data-edit="${esc(j.id)}" title="Edit">✎</button>
       <button class="small" data-email="${esc(j.id)}" title="Draft outreach">✉</button>
@@ -153,7 +154,7 @@ export async function mount() {
     if (b.dataset.email) {
       // Hand off to the outreach tab with this job preselected.
       window.dispatchEvent(new CustomEvent('jobsimp:navigate', {
-        detail: { tab: 'outreach', params: { jobId: b.dataset.email } },
+        detail: { tab: TAB.OUTREACH, params: { jobId: b.dataset.email } },
       }));
     }
     return undefined;
