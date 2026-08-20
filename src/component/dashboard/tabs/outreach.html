@@ -3,10 +3,16 @@
     <aside class="outreach-list" aria-label="Sent mail">
       <div class="outreach-list-head">
         <div class="outreach-list-title">
+          <label class="sent-select-all" data-tip="Select page" data-tip-pos="below">
+            <input type="checkbox" id="sentSelectAll" aria-label="Select all on this page">
+          </label>
           <span class="outreach-folder">Sent</span>
           <span class="hint" id="sentCount"></span>
         </div>
         <div class="outreach-list-actions">
+          <button type="button" class="icon-btn reader-icon-btn reader-icon-btn-danger" id="sentBulkTrashBtn" hidden data-tip="Trash selected" data-tip-pos="below" aria-label="Trash selected">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
           <button type="button" class="icon-btn" id="sentRefreshBtn" data-tip="Refresh Sent" data-tip-pos="below" aria-label="Refresh Sent">↻</button>
           <button type="button" class="primary" id="composeOpenBtn" data-tip="Compose" data-tip-pos="below-end" aria-label="Compose">Compose</button>
         </div>

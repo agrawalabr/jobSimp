@@ -30,6 +30,8 @@ let emails = [];
 let resumes = [];
 let recipients = [];
 let selectedEmailId = '';
+/** Gmail list row ids checked for bulk trash. */
+let checkedEmailIds = new Set();
 let searchQuery = '';
 let readerToken = 0;
 let composeOpen = false;
@@ -1449,7 +1451,7 @@ function composeSessionHasContent(session) {
 
 function confirmDiscardComposeSession(session) {
   if (!composeSessionHasContent(session)) return true;
-  return confirm('Close this draft? Your changes will be lost and cannot be recovered.');
+  return confirm('Discard this draft?');
 }
 
 /** Close deletes the draft permanently (no restore). */
@@ -2799,7 +2801,56 @@ function renderSentRowAvatar(row) {
   return `<span class="sent-row-avatar" style="--av-h:${hue}" aria-hidden="true">${initials}</span>`;
 }
 
+function pruneCheckedEmails() {
+  const ids = new Set(emails.map((e) => e.id));
+  for (const id of checkedEmailIds) {
+    if (!ids.has(id)) checkedEmailIds.delete(id);
+  }
+}
+
+function trashConfirmMessage(count) {
+  const n = Number(count) || 0;
+  return n === 1 ? 'Move to Trash?' : `Move ${n} to Trash?`;
+}
+
+function syncBulkTrashUI() {
+  pruneCheckedEmails();
+  const n = checkedEmailIds.size;
+  const btn = $id('sentBulkTrashBtn');
+  if (btn) {
+    btn.hidden = n === 0;
+    btn.disabled = n === 0;
+    btn.setAttribute('aria-label', n === 1 ? 'Trash 1 selected' : `Trash ${n} selected`);
+  }
+  const selectAll = $id('sentSelectAll');
+  if (selectAll) {
+    const { page } = pagedEmails();
+    const pageIds = page.map((m) => m.id);
+    const allChecked = pageIds.length > 0 && pageIds.every((id) => checkedEmailIds.has(id));
+    const someChecked = pageIds.some((id) => checkedEmailIds.has(id));
+    selectAll.checked = allChecked;
+    selectAll.indeterminate = !allChecked && someChecked;
+  }
+}
+
+function setEmailChecked(id, checked) {
+  if (checked) checkedEmailIds.add(id);
+  else checkedEmailIds.delete(id);
+  syncBulkTrashUI();
+}
+
+function togglePageSelection(checked) {
+  const { page } = pagedEmails();
+  for (const m of page) {
+    if (checked) checkedEmailIds.add(m.id);
+    else checkedEmailIds.delete(m.id);
+  }
+  syncBulkTrashUI();
+  renderSentLog();
+}
+
 async function renderSentLog() {
+  pruneCheckedEmails();
   const { all, page } = pagedEmails();
   const meta = sentListMeta();
   const countEl = $('sentCount');
@@ -2814,6 +2865,7 @@ async function renderSentLog() {
       selectedEmailId = '';
       showReaderEmpty();
     }
+    syncBulkTrashUI();
     return;
   }
 
@@ -2832,7 +2884,16 @@ async function renderSentLog() {
     const countBadge = count > 1
       ? `<span class="sent-row-count" aria-label="${count} messages in thread">${count}</span>`
       : '';
-    return `<div class="sent-row${m.id === selectedEmailId ? ' selected' : ''}" role="option" aria-selected="${m.id === selectedEmailId ? 'true' : 'false'}" data-id="${esc(m.id)}" tabindex="0">
+    const isChecked = checkedEmailIds.has(m.id);
+    const rowCls = [
+      'sent-row',
+      m.id === selectedEmailId ? 'selected' : '',
+      isChecked ? 'sent-row-checked' : '',
+    ].filter(Boolean).join(' ');
+    return `<div class="${rowCls}" role="option" aria-selected="${m.id === selectedEmailId ? 'true' : 'false'}" data-id="${esc(m.id)}" tabindex="0">
+      <label class="sent-row-check" data-stop-row="1">
+        <input type="checkbox" class="sent-row-check-input" data-id="${esc(m.id)}"${isChecked ? ' checked' : ''} aria-label="Select for trash">
+      </label>
       <div class="sent-row-avatar-col">${renderSentRowAvatar(m)}</div>
       <div class="sent-row-main">
         <div class="sent-row-line1">
@@ -2848,6 +2909,7 @@ async function renderSentLog() {
       </div>
     </div>`;
   }).join('');
+  syncBulkTrashUI();
 }
 
 function showReaderEmpty() {
@@ -2891,34 +2953,80 @@ function removeThreadFromMailbox(threadId) {
   }
 }
 
-async function trashSelectedThread() {
-  const m = emails.find((e) => e.id === selectedEmailId);
-  const threadId = String(m?.threadId || '').trim();
-  if (!threadId) return;
+async function trashThreadIds(threadIds) {
+  const ids = [...new Set((threadIds || []).map((t) => String(t || '').trim()).filter(Boolean))];
+  if (!ids.length) return { ok: 0, failed: 0 };
 
-  const subject = String(m.subject || '').trim() || '(no subject)';
-  const toLabel = peopleLabel(m.to, m.toName) || String(m.to || '').trim() || '(no recipient)';
-  const msgCount = listMessageCount(m);
-  const countNote = msgCount > 1 ? `\n\nThis thread has ${msgCount} messages.` : '';
-  if (!confirm(
-    `Move this conversation to Trash?\n\nTo: ${toLabel}\nSubject: ${subject}${countNote}\n\nIt will disappear from Sent. You can recover it from Gmail Trash.`,
-  )) return;
-
-  const btn = $id('r_trashBtn');
-  if (btn) btn.disabled = true;
-  try {
+  let ok = 0;
+  let failed = 0;
+  for (const threadId of ids) {
     const res = await send('email.trashThread', { threadId });
     if (!res?.ok) {
       const err = String(res?.error || '');
       if (/Unknown message:\s*email\.trashThread/i.test(err) || /Receiving end does not exist|Extension context invalidated/i.test(err)) {
         throw new Error('Extension background is outdated. Reload JobSimp on arc://extensions / chrome://extensions, then try Trash again.');
       }
-      throw new Error(err || 'Could not move to Trash');
+      failed += 1;
+      continue;
     }
-
-    const prevIdx = emails.findIndex((e) => e.id === m.id);
+    for (const row of emails) {
+      if (checkedEmailIds.has(row.id) && String(row.threadId || '') === threadId) {
+        checkedEmailIds.delete(row.id);
+      }
+    }
     removeThreadFromMailbox(threadId);
-    const stillThere = emails.some((e) => String(e.threadId || '') === threadId);
+    ok += 1;
+  }
+  return { ok, failed };
+}
+
+async function trashCheckedThreads() {
+  pruneCheckedEmails();
+  const rows = emails.filter((e) => checkedEmailIds.has(e.id));
+  const threadIds = [...new Set(rows.map((r) => String(r.threadId || '').trim()).filter(Boolean))];
+  if (!threadIds.length) return;
+  if (!confirm(trashConfirmMessage(threadIds.length))) return;
+
+  const btn = $id('sentBulkTrashBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const { ok, failed } = await trashThreadIds(threadIds);
+    await renderSentLog();
+
+    if (failed) alert(`${failed} could not be moved to Trash.`);
+    if (selectedEmailId && !emails.some((e) => e.id === selectedEmailId)) {
+      const next = emails[0];
+      if (next) await selectEmail(next.id);
+      else {
+        selectedEmailId = '';
+        showReaderEmpty();
+      }
+    } else if (!ok && !failed) {
+      alert('Could not move to Trash');
+    }
+  } catch (e) {
+    alert(e.message || 'Could not move to Trash');
+  } finally {
+    syncBulkTrashUI();
+    syncReaderActions(emails.find((x) => x.id === selectedEmailId));
+  }
+}
+
+async function trashSelectedThread() {
+  const m = emails.find((e) => e.id === selectedEmailId);
+  const threadId = String(m?.threadId || '').trim();
+  if (!threadId) return;
+
+  if (!confirm(trashConfirmMessage(1))) return;
+
+  const prevIdx = emails.findIndex((e) => e.id === m.id);
+  const btn = $id('r_trashBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const { ok, failed } = await trashThreadIds([threadId]);
+    if (failed) throw new Error('Could not move to Trash');
+
+    checkedEmailIds.delete(m.id);
     await renderSentLog();
 
     const next = emails[prevIdx] || emails[prevIdx - 1];
@@ -2927,9 +3035,11 @@ async function trashSelectedThread() {
       selectedEmailId = '';
       showReaderEmpty();
     }
+    if (!ok) throw new Error('Could not move to Trash');
   } catch (e) {
     alert(e.message || 'Could not move to Trash');
   } finally {
+    syncBulkTrashUI();
     syncReaderActions(emails.find((x) => x.id === selectedEmailId));
   }
 }
@@ -3752,14 +3862,7 @@ async function doSend() {
   const replyMeta = session?.replyMeta || null;
   const isReply = !!replyMeta?.threadId;
   const isForward = !isReply && !!String(session?.quoteHtml || '').trim();
-  const group = $('c_group').checked && recipients.length > 1;
-  const label = recipients.map(formatRecipientToken).join(', ');
-  const what = isReply
-    ? 'reply in this thread'
-    : isForward
-      ? 'this forward'
-      : (group ? `1 group email to ${recipients.length} people` : `${recipients.length} email(s)`);
-  if (!confirm(`${isReply ? 'Reply' : isForward ? 'Forward' : 'Send'} ${what}?\n\n${label}`)) return;
+  if (!confirm('Send this message?')) return;
 
   $('sendBtn').disabled = true;
   setComposeStatus(isReply ? 'replying' : isForward ? 'forwarding' : 'sending');
@@ -3885,6 +3988,10 @@ function initEvents() {
     } finally {
       if (btn) btn.disabled = false;
     }
+  };
+  $id('sentBulkTrashBtn').onclick = () => trashCheckedThreads();
+  $id('sentSelectAll').onchange = (e) => {
+    togglePageSelection(!!e.target.checked);
   };
   $id('r_replyBtn').onclick = () => composeFromThread('reply');
   $id('r_forwardBtn').onclick = () => composeFromThread('forward');
@@ -4072,9 +4179,17 @@ function initEvents() {
   $id('sentNextBtn').onclick = () => { goSentPage(1); };
 
   $id('emailRows').onclick = (e) => {
+    if (e.target.closest('[data-stop-row]')) return;
     const row = e.target.closest('.sent-row[data-id]');
     if (!row) return;
     selectEmail(row.dataset.id);
+  };
+  $id('emailRows').onchange = (e) => {
+    const cb = e.target.closest?.('.sent-row-check-input');
+    if (!cb) return;
+    setEmailChecked(cb.dataset.id, cb.checked);
+    const row = cb.closest('.sent-row');
+    if (row) row.classList.toggle('sent-row-checked', cb.checked);
   };
   $id('emailRows').onkeydown = (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;

@@ -155,7 +155,12 @@ tr:hover td{background:var(--lift)}
   overflow:visible;position:relative;z-index:4;
 }
 .outreach-list-actions{overflow:visible}
-.outreach-list-title{display:flex;align-items:baseline;gap:8px;min-width:0}
+.outreach-list-title{display:flex;align-items:center;gap:8px;min-width:0}
+.sent-select-all{display:flex;align-items:center;justify-self:center;align-self:center;cursor:pointer;width:12px;margin-right:-2px;}
+.sent-select-all input{width:12px;height:12px;margin:0;cursor:pointer;accent-color:var(--accent)}
+.sent-row-check{display:flex;align-items:center;justify-self:center;align-self:center;cursor:pointer;width:12px;margin-right:-2px;}
+.sent-row-check input{width:12px;height:12px;margin:0;cursor:pointer;accent-color:var(--accent)}
+.sent-row.sent-row-checked{background:color-mix(in srgb, var(--panel) 65%, var(--lift))}
 .outreach-folder{font-weight:700;font-size:15px;letter-spacing:-.01em}
 .outreach-list-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .outreach-list-head .primary{padding:7px 14px;font-size:13px;flex-shrink:0;border-radius:8px}
@@ -175,7 +180,7 @@ tr:hover td{background:var(--lift)}
 .outreach-list-pager .icon-btn:disabled{opacity:.35;cursor:default}
 .outreach-list-page{font-size:12px;color:var(--muted);min-width:5.5em;text-align:center;font-variant-numeric:tabular-nums}
 .sent-row{
-  display:grid;grid-template-columns:36px minmax(0,1fr) auto;column-gap:12px;
+  display:grid;grid-template-columns:28px 36px minmax(0,1fr) auto;column-gap:5px;
   align-items:center;padding:11px 14px;margin:0 6px;border-radius:10px;
   border-bottom:0;cursor:pointer;transition:background-color .12s ease,box-shadow .12s ease;
 }
