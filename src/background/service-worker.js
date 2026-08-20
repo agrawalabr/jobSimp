@@ -1,12 +1,10 @@
 // JobSimp service worker: message router (Controller).
 // Model: src/dao/<resource>.js classes (get/post/put/delete).
 
-import {
-  draftEmail, personalizeBody, appendSignature, appendSignatureHtml, ensureNamePlaceholder, generalizeGreeting,
-} from '../service/email.js';
+import { draftEmail } from '../email/draft-email.js';
 import { parseResume } from '../service/resume.js';
-import { sendEmail, b64, isAuthFailure, hardenSentCopy, findSentMessageByBeacon, getGmailMessage } from '../service/gmail.js';
-import { normalizeRecipients, recipientGreetingName } from '../static/recipients.js';
+import { b64, getGmailMessage, getGmailThread, getGmailConversation, getGmailThreadMeta, getGmailThreadsMetaBatch, getGmailThreadsFullBatch, getGmailAttachment, getGmailMessageForImport, findSentMessagesBySubject, listGmailSentThreads, trashGmailThread } from '../email/gmail.js';
+import { normalizeRecipients, recipientGreetingName, recipientListLabel } from '../static/recipients.js';
 import { getSettings, saveSettings } from '../service/settings.js';
 import { signIn, getUser, signOut } from '../service/oauth.js';
 import { requestLLM, extractJson } from '../service/llm.js';
@@ -14,12 +12,21 @@ import { getJdAnalysis, putJdAnalysis } from '../service/jdCache.js';
 import {
   applicationStatus, startApplication, consolidatePage,
   advanceApplication, completeApplication, buildTailored, saveUserAnswer,
+  resolveOneField, rewriteField,
 } from '../service/apply.js';
 import { identityContext } from '../service/identity.js';
 import {
-  ensureBeacon, trackBeacon, registerBeacon, resetBeacon, pixelHtml, extractBeaconId,
-  listPixels, createPixel, patchBeaconMessageId,
-} from '../service/beacon.js';
+  trackBeacon, registerBeacon, resetBeacon, pixelHtml, extractBeaconId, cleanEmail,
+  listPixels, createPixel, ensureBeacon, patchBeaconMessageId,
+} from '../email/beacon.js';
+import {
+  sendTrackedEmail,
+  finalizeNativeSend,
+  watchScheduledSend,
+  drainEmailTxs,
+  installEmailTxAlarms,
+  allocBeaconId,
+} from '../email/manager.js';
 import { JD_ANALYSIS_PROMPT } from '../static/prompts.js';
 import { isJobUrl, jobCacheKey, extractJobId, JD_TEXT_LIMIT } from '../static/jobUrl.js';
 import { user, profile, metrics, settings, resume, job, answer, email, discovered, transaction, jdgraph, graph } from '../dao/index.js';
@@ -34,6 +41,7 @@ chrome.runtime?.onInstalled?.addListener(async (details) => {
   if (details.reason === 'update' || details.reason === 'install') {
     await reloadGmailTabs('onInstalled:' + details.reason);
   }
+  drainEmailTxs().catch((e) => console.warn('[email] onInstalled drain failed', e.message));
 });
 
 /** Kill zombie Gmail content scripts after an extension reload / version bump. */
@@ -75,6 +83,9 @@ function bootSideEffects() {
   cleanupEphemeral();
   // Unpacked "Reload" restarts the SW; bump storage so Gmail tabs pick up new content scripts.
   reloadGmailTabs('boot').catch(() => {});
+  // Durable harden→register: wire alarms + drain any txs left from a prior SW life.
+  installEmailTxAlarms();
+  drainEmailTxs().catch((e) => console.warn('[email] boot drain failed', e.message));
 }
 queueMicrotask(bootSideEffects);
 
@@ -133,156 +144,6 @@ async function buildResumeAttachment(resumeId) {
   return { attachment: null, error: 'Resume has no file or text to attach.' };
 }
 
-/**
- * Register or reset a beacon for this send. Fail-soft: returns '' on error
- * so the email still goes out (Sent UI will show Untracked).
- */
-async function beaconForSend({ reuseId, meta }) {
-  try {
-    const payload = await ensureBeacon({ id: reuseId || undefined, meta });
-    return payload?.id || '';
-  } catch (e) {
-    console.warn('[beacon] ensure failed', e.message);
-    return '';
-  }
-}
-
-// ---------- beacon <-> Gmail message id (exact Sent-row matching) ----------
-//
-// Gmail's own Sent-list rows expose a native message id in the DOM
-// (data-legacy-last-non-draft-message-id) — the same id format
-// hardenSentCopy's insert step returns. The moment hardening confirms a
-// beacon's final Gmail message id, attach it to that beacon's own meta via
-// patchBeaconMessageId — beacon.list then returns meta.gmailMessageId
-// directly, so the content script can build an exact match index straight
-// from docs it already fetches, no separate lookup needed.
-
-async function recordBeaconMessageId(beaconId, gmailMessageId) {
-  if (!beaconId || !gmailMessageId) return;
-  try {
-    await patchBeaconMessageId(beaconId, gmailMessageId);
-  } catch (e) {
-    console.warn('[beacon] recordBeaconMessageId failed', e.message);
-  }
-}
-//
-// A "Schedule send" click queues the message in Gmail without sending it —
-// it can sit there for hours or days, and may fire long after this browser
-// session (even after a restart). The pixel has to be baked into the body
-// at schedule-click time (that's the content that eventually goes out),
-// but registering the beacon then would be premature: the message hasn't
-// actually been sent, may still be edited/cancelled from the queue, and
-// hardenSentCopy would have nothing to find yet. So registration is
-// deferred to a periodic alarm that checks whether each pending watch has
-// actually landed in Sent — reusing the same search-then-verify approach
-// findSentMessageByBeacon already uses for the immediate-send flow.
-//
-// Persisted in chrome.storage.local rather than the IndexedDB dao layer:
-// this is a small, short-lived, unindexed queue, not a real resource.
-
-const SCHEDULED_WATCH_KEY = 'jobsimp_scheduled_beacon_watches';
-const SCHEDULED_ALARM = 'jobsimp-scheduled-beacon-check';
-const SCHEDULED_WATCH_MAX_AGE_MS = 32 * 24 * 3600 * 1000; // past Gmail's schedule horizon
-
-async function getScheduledWatches() {
-  const got = await chrome.storage.local.get(SCHEDULED_WATCH_KEY);
-  const list = got?.[SCHEDULED_WATCH_KEY];
-  return Array.isArray(list) ? list : [];
-}
-
-async function setScheduledWatches(list) {
-  await chrome.storage.local.set({ [SCHEDULED_WATCH_KEY]: list });
-}
-
-async function ensureScheduledAlarm() {
-  const existing = await chrome.alarms.get(SCHEDULED_ALARM);
-  if (!existing) chrome.alarms.create(SCHEDULED_ALARM, { periodInMinutes: 10 });
-}
-
-async function checkScheduledWatches() {
-  const watches = await getScheduledWatches();
-  if (!watches.length) {
-    await chrome.alarms.clear(SCHEDULED_ALARM);
-    return;
-  }
-  const remaining = [];
-  for (const w of watches) {
-    if (Date.now() - (w.addedAt || 0) > SCHEDULED_WATCH_MAX_AGE_MS) {
-      console.warn('[beacon] scheduled watch expired without confirming send', w.beaconId);
-      continue; // drop — well past any realistic Gmail schedule horizon
-    }
-    let found = null;
-    try {
-      found = await findSentMessageByBeacon(w.beaconId, { to: w.to, retries: 1, delayMs: 0 });
-    } catch (e) {
-      console.warn('[beacon] scheduled watch search failed', w.beaconId, e.message);
-    }
-    if (!found) {
-      remaining.push(w); // still queued (or not yet indexed) — check again next cycle
-      continue;
-    }
-    // Actually sent now — register the beacon at real send time, then harden.
-    try {
-      await createPixel({ id: w.beaconId, count: 0, meta: w.meta });
-    } catch (e) {
-      console.warn('[beacon] scheduled watch: createPixel failed', w.beaconId, e.message);
-      remaining.push(w); // retry next cycle rather than losing tracking silently
-      continue;
-    }
-    hardenSentCopy(found).then((r) => {
-      if (!r.ok) console.warn('[beacon] scheduled hardening skipped', w.beaconId, r.reason);
-      else if (r.id) recordBeaconMessageId(w.beaconId, r.id).catch(() => {});
-    }).catch((e) => console.warn('[beacon] scheduled hardening threw', e.message));
-  }
-  await setScheduledWatches(remaining);
-  if (!remaining.length) await chrome.alarms.clear(SCHEDULED_ALARM);
-}
-
-chrome.alarms?.onAlarm?.addListener((alarm) => {
-  if (alarm.name !== SCHEDULED_ALARM) return;
-  checkScheduledWatches().catch((e) => console.warn('[beacon] scheduled check failed', e.message));
-});
-
-/** Send one message and persist its log row. Never throws. */
-async function sendAndLog({
-  to, toName, body, bodyHtml, subject, jobId, provider, resumeId, attached, fromName, attachments, beaconId,
-}) {
-  const toStr = Array.isArray(to) ? to.join(', ') : to;
-  const bid = beaconId || '';
-  const rec = {
-    jobId: jobId ?? null,
-    to: toStr,
-    toName,
-    subject,
-    body,
-    provider: provider || '',
-    resumeId: resumeId || '',
-    attached: !!attached,
-    beaconId: bid,
-    jobsimp: bid ? { subject: subject || '', to: toStr || '', beaconId: bid } : undefined,
-    status: 'draft',
-  };
-  try {
-    const sent = await sendEmail({
-      to, subject, body, bodyHtml, fromName, attachments, beaconId: beaconId || undefined,
-    });
-    rec.gmailId = sent.id;
-    rec.status = 'sent';
-    rec.sentAt = Date.now();
-    if (beaconId) {
-      hardenSentCopy({ id: sent.id, threadId: sent.threadId }).then((r) => {
-        if (!r.ok) console.warn('[beacon] outreach hardening skipped', rec.gmailId, r.reason);
-        else if (r.id) recordBeaconMessageId(beaconId, r.id).catch(() => {});
-      }).catch((e) => console.warn('[beacon] outreach hardening threw', e.message));
-    }
-  } catch (e) {
-    rec.status = 'failed';
-    rec.error = e.message;
-  }
-  await email.post(rec);
-  return { to: rec.to, status: rec.status, error: rec.error || '', beaconId: rec.beaconId || '' };
-}
-
 // ---------- message router ----------
 const handlers = {
   'job.save': (p) => job.post(p),
@@ -296,10 +157,143 @@ const handlers = {
   'answers.list': () => answer.get(),
   'answers.save': (p) => answer.post(p),
   'answers.delete': (p) => answer.delete(p.id),
-  'emails.list': () => email.get(),
+  'emails.list': async () => {
+    const rows = await email.get();
+    return [...rows].sort((a, b) => (
+      (Number(b?.lastActivityAt || b?.sentAt || b?.createdAt) || 0)
+      - (Number(a?.lastActivityAt || a?.sentAt || a?.createdAt) || 0)
+    ));
+  },
+  /**
+   * One Gmail Sent page via users.threads.list (most recent first).
+   * Does NOT walk every page — UI drives pagination with nextPageToken.
+   * Rows are thread-scoped (never messages.list).
+   */
+  'emails.syncFromGmailSent': async (p = {}) => {
+    const pageSize = Math.min(100, Math.max(1, Number(p?.maxResults) || 25));
+    const pageToken = String(p?.pageToken || '').trim();
+    const listed = await listGmailSentThreads({ maxResults: pageSize, pageToken });
+
+    const rawRows = [];
+    const seenThread = new Set();
+    for (const meta of listed.threads) {
+      const threadId = String(meta?.id || '').trim();
+      if (!threadId || seenThread.has(threadId)) continue;
+      seenThread.add(threadId);
+      const lastActivityAt = Number(meta.lastActivityAt || meta.internalDate || 0) || 0;
+      rawRows.push({
+        id: `email:gmail:${threadId}`,
+        threadId,
+        gmailId: String(meta.lastMessageId || '').trim(),
+        subject: String(meta.subject || '').trim(),
+        to: String(meta.to || '').trim(),
+        toName: recipientListLabel(meta.to),
+        snippet: String(meta.snippet || '').trim(),
+        status: 'sent',
+        provider: 'gmail',
+        sentAt: lastActivityAt,
+        lastActivityAt,
+        messageCount: Number(meta.messageCount) || 1,
+        beaconId: '',
+        attached: false,
+        attachMeta: [],
+        _gmailListIdx: rawRows.length,
+      });
+    }
+
+    // Gmail threads.list order ≠ newest-message time (harden orphans / query match).
+    // Sort this page by each thread's newest message timestamp, then re-rank.
+    const ordered = [...rawRows].sort((a, b) => {
+      const db = Number(b.lastActivityAt) || 0;
+      const da = Number(a.lastActivityAt) || 0;
+      if (db !== da) return db - da;
+      return (Number(a._gmailListIdx) || 0) - (Number(b._gmailListIdx) || 0);
+    }).map((row, rank) => {
+      const { _gmailListIdx, ...rest } = row;
+      return { ...rest, sentRank: rank };
+    });
+
+    return {
+      ok: true,
+      source: 'gmail-threads-page-v1',
+      upserted: ordered.length,
+      nextPageToken: listed.nextPageToken || '',
+      resultSizeEstimate: listed.resultSizeEstimate || ordered.length,
+      emails: ordered,
+    };
+  },
+
+  /* —— legacy list helpers (disabled for outreach restart; kept for other callers) —— */
+  // 'emails.ensureFromBeacons': … see git history / unused by new Sent sync path
+
+  /**
+   * @deprecated Outreach list no longer uses per-row meta refresh for chronology.
+   */
+  'emails.refreshThreadMeta': async (p = {}) => {
+    // Kept as no-op-ish best-effort snippet bump only — does NOT change list order/subjects.
+    const rows = await email.get();
+    const ids = Array.isArray(p?.threadIds) && p.threadIds.length
+      ? p.threadIds.map((t) => String(t || '').trim()).filter(Boolean)
+      : rows.map((r) => String(r.threadId || '').trim()).filter(Boolean);
+    if (!ids.length) return { ok: true, updated: 0, threads: [] };
+    const metas = await getGmailThreadsMetaBatch(ids);
+    const byId = new Map(metas.map((m) => [m.id, m]));
+    const updated = [];
+    for (const row of rows) {
+      const tid = String(row.threadId || '').trim();
+      if (!tid) continue;
+      const meta = byId.get(tid);
+      if (!meta) continue;
+      const lastActivityAt = meta.lastActivityAt || meta.internalDate || row.lastActivityAt || row.sentAt || 0;
+      await email.post({
+        id: row.id,
+        snippet: meta.snippet || row.snippet,
+        gmailId: meta.lastMessageId || row.gmailId,
+        lastActivityAt,
+      });
+      updated.push({ id: row.id, threadId: tid, lastActivityAt });
+    }
+    return { ok: true, updated: updated.length, threads: updated };
+  },
   /** Fetch a Sent message from Gmail for the Outreach reading pane. */
-  'email.getGmail': (p) => getGmailMessage(p?.gmailId || p?.id),
-  /** Upsert outreach/webmail tracking log. Dedupes by beaconId. */
+  'email.getGmail': async (p) => {
+    const out = await getGmailMessage(p?.gmailId || p?.id);
+    return out;
+  },
+  /** Fetch a full Gmail thread (conversation) for the Outreach reader. */
+  'email.getThread': (p) => getGmailThread(p?.threadId || p?.id),
+  /** Full chat for one Gmail threadId only. */
+  'email.getConversation': (p) => getGmailConversation({
+    threadId: p?.threadId || p?.id,
+  }),
+  'email.trashThread': async (p) => {
+    const threadId = String(p?.threadId || p?.id || '').trim();
+    return trashGmailThread(threadId);
+  },
+  'email.getThreadsBatch': (p) => getGmailThreadsFullBatch(p?.threadIds || p?.ids || []),
+  'email.getThreadMeta': (p) => getGmailThreadMeta(p?.threadId || p?.id),
+  'email.getThreadsMetaBatch': (p) => getGmailThreadsMetaBatch(p?.threadIds || p?.ids || []),
+  /** Download one Gmail attachment (base64url). */
+  'email.getAttachment': (p) => getGmailAttachment({
+    messageId: p?.messageId || p?.gmailId,
+    attachmentId: p?.attachmentId,
+  }),
+  /** Open a Gmail thread (reply/forward happens in Gmail UI). */
+  'email.openInGmail': async (p) => {
+    const threadId = String(p?.threadId || p?.gmailId || '').trim();
+    if (!threadId) throw new Error('threadId required');
+    const url = `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(threadId)}`;
+    const tabs = await chrome.tabs.query({ url: ['https://mail.google.com/*'] });
+    const existing = (tabs || []).find((t) => t.id != null);
+    if (existing?.id != null) {
+      await chrome.tabs.update(existing.id, { url, active: true });
+      if (existing.windowId != null) await chrome.windows.update(existing.windowId, { focused: true });
+    } else {
+      await chrome.tabs.create({ url, active: true });
+    }
+    return { ok: true, url };
+  },
+  /** Upsert outreach/webmail tracking log. Dedupes by id / beaconId / threadId. */
   'emails.post': async (p = {}) => {
     const beaconId = String(p.beaconId || p.jobsimp?.beaconId || '').trim();
     const subject = p.subject ?? p.jobsimp?.subject ?? '';
@@ -311,19 +305,60 @@ const handlers = {
         beaconId,
       }
       : (p.jobsimp || undefined);
+    const explicitId = (p.id && String(p.id).startsWith('email:')) ? p.id : '';
+    if (explicitId) {
+      return email.post({
+        ...p,
+        id: explicitId,
+        to: to || p.to,
+        subject: subject || p.subject,
+        beaconId: beaconId || p.beaconId,
+        jobsimp,
+        lastActivityAt: p.lastActivityAt ?? p.sentAt ?? Date.now(),
+      });
+    }
     if (beaconId) {
       const existing = await email.findByBeacon(beaconId);
       if (existing) {
-        if (existing.jobsimp?.beaconId && existing.beaconId) return existing;
         return email.post({
           id: existing.id,
           to: to || existing.to,
           subject: subject || existing.subject,
           beaconId,
+          gmailId: p.gmailId ?? existing.gmailId,
+          threadId: p.threadId ?? existing.threadId,
+          snippet: p.snippet ?? existing.snippet,
+          attached: p.attached ?? existing.attached,
+          attachMeta: p.attachMeta ?? existing.attachMeta,
+          body: '',
           status: p.status || existing.status || 'sent',
           provider: p.provider || existing.provider || '',
           sentAt: p.sentAt ?? existing.sentAt ?? Date.now(),
+          lastActivityAt: p.lastActivityAt ?? p.sentAt ?? Date.now(),
           jobsimp,
+        });
+      }
+    }
+    const threadId = String(p.threadId || '').trim();
+    if (threadId) {
+      const byThread = await email.findByThreadId(threadId);
+      if (byThread) {
+        return email.post({
+          id: byThread.id,
+          to: to || byThread.to,
+          subject: subject || byThread.subject,
+          beaconId: beaconId || byThread.beaconId,
+          gmailId: p.gmailId ?? byThread.gmailId,
+          threadId,
+          snippet: p.snippet ?? byThread.snippet,
+          attached: p.attached ?? byThread.attached,
+          attachMeta: p.attachMeta ?? byThread.attachMeta,
+          body: '',
+          status: p.status || byThread.status || 'sent',
+          provider: p.provider || byThread.provider || '',
+          sentAt: p.sentAt ?? byThread.sentAt ?? Date.now(),
+          lastActivityAt: p.lastActivityAt ?? p.sentAt ?? Date.now(),
+          jobsimp: jobsimp || byThread.jobsimp,
         });
       }
     }
@@ -335,6 +370,7 @@ const handlers = {
       jobsimp,
       status: p.status || 'sent',
       sentAt: p.sentAt ?? Date.now(),
+      lastActivityAt: p.lastActivityAt ?? p.sentAt ?? Date.now(),
     });
   },
   'beacon.ensure': (p) => ensureBeacon({ id: p?.id, meta: p?.meta }),
@@ -343,45 +379,32 @@ const handlers = {
   'beacon.list': (p) => listPixels({ from: p?.from || p?.meta?.from }),
   'beacon.reset': (p) => resetBeacon(p?.id),
   'beacon.track': (p) => trackBeacon(p?.id),
-  'beacon.pixelHtml': (p) => ({ html: pixelHtml(p?.id), id: p?.id || '' }),
+  'beacon.pixelHtml': (p) => ({
+    html: pixelHtml(p?.id, { defer: !!p?.defer }),
+    id: p?.id || '',
+  }),
+  'beacon.allocId': (p) => ({ id: allocBeaconId(p?.id) }),
   'beacon.extractId': (p) => extractBeaconId(p?.html || p?.body || ''),
   /**
-   * Content script: harden the Sent-folder copy after a native Gmail
-   * compose send. We never get a message id from that send (Gmail's own UI
-   * does the actual send call) so we have to find it first via the beacon
-   * id already embedded in the body, then strip+trash+reinsert.
+   * Native Gmail send handoff: enqueue durable harden→register (no early Cloud Run create).
+   * Optional gmailMessageIdHint from data-legacy-last-*-message-id.
    */
-  'beacon.hardenSent': async (p) => {
-    const beaconId = String(p?.beaconId || '').trim();
-    if (!beaconId) return { ok: false, reason: 'no beaconId' };
-    const found = await findSentMessageByBeacon(beaconId, { to: p?.to });
-    if (!found) {
-      console.warn('[beacon] mail-track hardening skipped', beaconId, 'sent message not found');
-      return { ok: false, reason: 'sent message not found (search timed out)' };
-    }
-    const result = await hardenSentCopy(found);
-    if (!result.ok) console.warn('[beacon] mail-track hardening skipped', beaconId, result.reason);
-    else if (result.id) recordBeaconMessageId(beaconId, result.id).catch(() => {});
-    return result;
-  },
-  /**
-   * Content script: a "Schedule send" click was detected — the pixel is
-   * already baked into the queued message, but registration is deferred
-   * until checkScheduledWatches() confirms it actually left the queue.
-   */
-  'beacon.watchScheduled': async (p) => {
-    const beaconId = String(p?.beaconId || '').trim();
-    if (!beaconId) return { ok: false, reason: 'no beaconId' };
-    const watches = await getScheduledWatches();
-    if (!watches.some((w) => w.beaconId === beaconId)) {
-      watches.push({
-        beaconId, to: p?.to || [], meta: p?.meta || {}, addedAt: Date.now(),
-      });
-      await setScheduledWatches(watches);
-    }
-    await ensureScheduledAlarm();
-    return { ok: true };
-  },
+  'beacon.hardenSent': (p) => finalizeNativeSend({
+    beaconId: p?.beaconId,
+    to: p?.to,
+    from: p?.from,
+    subject: p?.subject,
+    source: p?.source || 'gmail/google',
+    sentAt: p?.sentAt,
+    gmailMessageIdHint: p?.gmailMessageId || p?.gmailMessageIdHint,
+  }),
+  /** Schedule send: bake pixel in UI; watch until Sent, then same harden→register. */
+  'beacon.watchScheduled': (p) => watchScheduledSend({
+    beaconId: p?.beaconId,
+    to: p?.to,
+    meta: p?.meta,
+  }),
+  'email.drainTxs': () => drainEmailTxs(),
   'discovered.list': () => discovered.get(),
   'discovered.update': (p) => discovered.put(p),
   'settings.get': () => getSettings(),
@@ -407,6 +430,13 @@ const handlers = {
   },
   'open.onboarding': async () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/component/onboarding/onboarding.html') });
+    return true;
+  },
+  'open.outreach.compose': async (p) => {
+    const q = new URLSearchParams({ tab: 'outreach' });
+    if (p?.jobId) q.set('jobId', String(p.jobId));
+    if (p?.resumeId) q.set('resumeId', String(p.resumeId));
+    await chrome.tabs.create({ url: chrome.runtime.getURL(`src/component/dashboard/dashboard.html?${q}`) });
     return true;
   },
 
@@ -466,6 +496,8 @@ const handlers = {
   },
   'application.context': (p, sender) => applyCtxByTab.get(sender?.tab?.id) || null,
   'page.consolidate': (p) => consolidatePage(p),
+  'field.resolve': (p) => resolveOneField(p),
+  'field.rewrite': (p) => rewriteField(p),
   'application.advance': (p) => advanceApplication(p),
   'application.userAnswer': (p) => saveUserAnswer(p),
   'application.complete': async (p, sender) => {
@@ -579,125 +611,11 @@ const handlers = {
     return out;
   },
 
-  'email.send': async (p) => {
-    const s = await getSettings();
-    const list = normalizeRecipients(p.recipients);
-    if (!list.length) throw new Error('No valid email addresses found.');
-
-    const subject = String(p.subject || '').trim();
-    if (!subject) throw new Error('Subject is required.');
-    if (!String(p.body || '').trim()) throw new Error('Body is required.');
-
-    // One message to everyone, or one tailored message each.
-    const group = !!p.group && list.length > 1;
-    const fanOut = !group && list.length > 1;
-
-    // Signature is applied HERE, not at draft time, so edits to it take effect.
-    // The greeting placeholder is re-derived here too: the recipient list can
-    // change after drafting, which invalidates the model's draft-time choice.
-    let body = String(p.body || '');
-    let bodyHtml = String(p.bodyHtml || '').trim();
-    const sig = p.signature ?? s.emailTemplate?.signature ?? '';
-    if (fanOut) body = ensureNamePlaceholder(body);
-    if (group) body = generalizeGreeting(body, list.map(recipientGreetingName));
-    body = appendSignature(body, sig);
-
-    // Rich HTML from Quill: keep when structural greeting rewrites aren't required,
-    // or when {{name}} is already present for fan-out.
-    if (bodyHtml) {
-      if (fanOut && !bodyHtml.includes('{{name}}')) bodyHtml = '';
-      else {
-        if (group) bodyHtml = generalizeGreeting(bodyHtml, list.map(recipientGreetingName));
-        bodyHtml = appendSignatureHtml(bodyHtml, sig);
-      }
-    }
-
-    const attachments = [];
-    const wantResume = !!p.attach;
-    const fileExtras = Array.isArray(p.fileAttachments)
-      ? p.fileAttachments
-      : (p.fileAttachment?.dataB64 ? [p.fileAttachment] : []);
-
-    if (wantResume) {
-      if (!p.resumeId) throw new Error('No resume selected — nothing attached.');
-      const built = await buildResumeAttachment(p.resumeId);
-      if (!built.attachment) throw new Error(built.error || 'Could not attach resume.');
-      attachments.push(built.attachment);
-    }
-    for (const f of fileExtras) {
-      if (!f?.dataB64) continue;
-      attachments.push({
-        filename: f.filename || 'attachment',
-        mime: f.mime || 'application/octet-stream',
-        dataB64: f.dataB64,
-      });
-    }
-    // Asked for file attachments and none resolved → stop.
-    if (fileExtras.length && attachments.length === (wantResume ? 1 : 0)) {
-      throw new Error('Could not attach file.');
-    }
-
-    const wantTrack = p.track !== false;
-    const reuseId = wantTrack ? (p.beaconId || extractBeaconId(body) || '') : '';
-    const common = {
-      subject,
-      jobId: p.jobId,
-      provider: p.provider,
-      fromName: s.gmail?.fromName || '',
-      resumeId: wantResume ? p.resumeId : '',
-      attached: attachments.length > 0,
-      attachments,
-    };
-
-    if (group) {
-      const toList = list.map((r) => r.email);
-      const beaconId = wantTrack
-        ? await beaconForSend({
-          reuseId,
-          meta: { jobId: p.jobId, to: toList.join(', '), source: 'jobSimp' },
-        })
-        : '';
-      return [await sendAndLog({
-        ...common,
-        to: toList,
-        toName: list.map((r) => (recipientGreetingName(r) ? r.text : '')).filter(Boolean).join(', '),
-        body: personalizeBody(body, ''),
-        bodyHtml: bodyHtml ? personalizeBody(bodyHtml, '') : '',
-        beaconId,
-      })];
-    }
-
-    const results = [];
-    for (const r of list) {
-      const greeting = recipientGreetingName(r);
-      // Fan-out: one beacon per recipient so open counts stay independent.
-      const beaconId = wantTrack
-        ? await beaconForSend({
-          reuseId: list.length === 1 ? reuseId : '',
-          meta: { jobId: p.jobId, to: r.email, source: 'jobSimp' },
-        })
-        : '';
-      const out = await sendAndLog({
-        ...common,
-        to: r.email,
-        toName: greeting ? r.text : '',
-        body: personalizeBody(body, greeting),
-        bodyHtml: bodyHtml ? personalizeBody(bodyHtml, greeting) : '',
-        beaconId,
-      });
-      results.push(out);
-
-      // A dead OAuth session fails identically for every remaining recipient —
-      // and each retry re-opens the Google consent window. Bail out instead.
-      if (out.status === 'failed' && isAuthFailure(out.error)) {
-        for (const skipped of list.slice(results.length)) {
-          results.push({ to: skipped.email, status: 'failed', error: 'Skipped — sign in again and retry.' });
-        }
-        break;
-      }
-    }
-    return results;
-  },
+  'email.send': async (p) => sendTrackedEmail(p, {
+    buildResumeAttachment,
+    getSettings,
+    getUserEmail: async () => (await getUser())?.email || '',
+  }),
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

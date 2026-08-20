@@ -14,7 +14,7 @@ const BODY_VALUE = (COMPOSE_BLOCKS.find((b) => b.default) || COMPOSE_BLOCKS.find
 
 /** Toolbar fragment — ids differ for compose vs signature. */
 export function sizeToolbarHtml({ id = 'ql_block' } = {}) {
-  return `<select class="ql-compose-block" id="${id}" name="${id}" aria-label="Text style"></select>`;
+  return `<select class="ql-compose-block" id="${id}" name="${id}" data-tip="Text style" aria-label="Text style"></select>`;
 }
 
 export function fillBlockSelects(toolbar) {
@@ -57,7 +57,7 @@ export function ensureComposeBlockStyles() {
 }
 
 function clearBlockFormats(quill) {
-  for (const key of BLOCK_FORMATS) quill.format(key, false);
+  for (const key of BLOCK_FORMATS) quill.format(key, false, 'user');
 }
 
 function applyComposeBlock(quill, value) {
@@ -69,7 +69,7 @@ function applyComposeBlock(quill, value) {
   clearBlockFormats(quill);
   if (!block?.apply) return;
   for (const [k, val] of Object.entries(block.apply)) {
-    quill.format(k, val);
+    quill.format(k, val, 'user');
   }
 }
 

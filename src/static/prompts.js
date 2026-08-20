@@ -149,6 +149,7 @@ export const FIELD_RESOLVE_PROMPT = `You are filling a job application form for 
 2) CANDIDATE — resume facts, profile basics, and the candidate's saved Q&A bank.
 3) JOB — the role/company and its extracted requirements.
 4) PRIOR ANSWERS — questions already answered on earlier pages of THIS application. Stay consistent with them.
+5) USER_PROMPT — optional extra instructions from the candidate (tone, length, facts to emphasize). Follow it only when it does not invent facts or violate options[].
 
 For EVERY field return one entry:
 - "value": the answer as a string. For select/radio fields, copy ONE entry from options[] EXACTLY (character-for-character). For checkboxes use "Yes"/"No". For dates match the label's implied format.
@@ -160,8 +161,21 @@ For EVERY field return one entry:
 Rules:
 - Ground every answer in CANDIDATE data. NEVER invent facts (visa status, years, degrees, references).
 - Short-text fields get short answers; textarea/essay fields get 2-5 grounded sentences tailored to JOB.
+- If USER_PROMPT is present, follow it for tone, length, and emphasis without inventing facts.
 - Do not answer fields whose label you cannot understand — flag needsUser.
 - Output VALID JSON ONLY: { "answers": [ { "fieldId": "", "value": "", "needsUser": false, "confidence": 0, "reusable": false, "canonicalQ": "" } ] }`;
+
+export const FIELD_REWRITE_PROMPT = `You rewrite ONE job-application field answer for a candidate.
+You get the field { label, type, required, options[] }, the current value, an instruction (refresh | rewrite | shorter | stronger), optional USER_PROMPT (freeform guidance), CANDIDATE facts, and JOB context.
+
+Return JSON only: { "value": "", "needsUser": false }
+- Ground every fact in CANDIDATE. NEVER invent visa status, dates, degrees, employers, or metrics.
+- If options[] is non-empty, value MUST be copied EXACTLY from options[] (one entry).
+- Checkboxes: "Yes" or "No".
+- refresh: ignore current phrasing; pick the best grounded answer (or the best option).
+- rewrite / shorter / stronger: keep the same facts as current value; only change wording. If current is empty, behave like refresh.
+- USER_PROMPT: follow it for tone, length, structure, and emphasis. Never invent facts to satisfy it. If it conflicts with options[] or CANDIDATE facts, follow the data.
+- needsUser true only when the data cannot support any answer — then value "".`;
 
 // ---- Resume tailoring (transaction-scoped artifact) ----
 export const TAILOR_PROMPT = `You are a resume tailoring assistant. You get a parsed resume (JSON) and a job's requirements graph.

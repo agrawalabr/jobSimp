@@ -1,10 +1,16 @@
-import { requestLLM, extractJson } from './llm.js';
+// Draft/copy helpers (LLM draft, signature, greeting). SW-only — needs LLM keys.
+import { requestLLM, extractJson } from '../service/llm.js';
 import { EMAIL_DRAFT_PROMPT } from '../static/prompts.js';
 import { recipientGreetingName } from '../static/recipients.js';
+import { compactSignatureHtml, htmlLastLineEmpty } from '../static/signatures.js';
 
 const GREETING_RE = /^[ \t]*(hi|hey|hello|dear)\b[^\n,]*,?[ \t]*/i;
 
-const squash = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+const squash = (s) => String(s || '')
+  .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
 
 /**
  * Append the signature block — idempotently.
@@ -15,11 +21,13 @@ const squash = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
  * draft persisted before this change — never doubles the sign-off.
  */
 export function appendSignature(body, signature) {
-  const b = String(body || '').replace(/\s+$/, '');
   const sig = signaturePlain(signature);
-  if (!sig) return b;
-  if (squash(b).endsWith(squash(sig))) return b;
-  return `${b}\n\n${sig}`;
+  if (!sig) return String(body || '').replace(/\s+$/, '');
+  const raw = String(body || '').replace(/[ \t]+$/gm, '');
+  if (squash(raw).endsWith(squash(sig))) return raw.replace(/\s+$/, '');
+  const lastEmpty = !raw.trim() || raw.endsWith('\n');
+  if (lastEmpty) return `${raw.replace(/\n+$/, '\n')}${sig}`.replace(/^\n+/, '');
+  return `${raw.replace(/\s+$/, '')}\n\n${sig}`;
 }
 
 /** Strip tags for plain-text signature comparisons / MIME text part. */
@@ -42,22 +50,13 @@ export function signaturePlain(signature) {
 
 /** Append signature to an HTML fragment (Quill output). */
 export function appendSignatureHtml(html, signature) {
-  const h = String(html || '').trim();
-  const sig = String(signature || '').trim();
-  if (!sig || !h) return h || '';
-  const plain = signaturePlain(sig);
-  if (plain && squash(h).includes(squash(plain))) return h;
-  if (/<[a-z][\s\S]*>/i.test(sig)) {
-    return `${h}<p><br></p>${sig}`;
-  }
-  const block = sig
-    .split(/\n/)
-    .map((line) => line
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;'))
-    .join('<br>\n');
-  return `${h}<p><br></p><p>${block}</p>`;
+  const h = String(html || '');
+  const compact = compactSignatureHtml(signature);
+  if (!compact) return h;
+  const plain = signaturePlain(signature);
+  if (plain && squash(signaturePlain(h)).endsWith(squash(plain))) return h;
+  const gap = htmlLastLineEmpty(h) ? '' : `<div><br></div>`;
+  return `${h}${gap}${compact}`;
 }
 
 /** Remove a trailing signature block, if the body ends with one. */
@@ -67,6 +66,37 @@ export function stripSignature(body, signature) {
   if (!sig || !squash(b).endsWith(squash(sig))) return b;
   const cut = b.lastIndexOf(sig.split('\n')[0]);
   return cut > 0 ? b.slice(0, cut).replace(/\s+$/, '') : b;
+}
+
+/** True when tag-stripped body already ends with this signature. */
+export function bodyEndsWithSignature(body, signature) {
+  const sig = signaturePlain(signature);
+  if (!sig) return false;
+  return squash(signaturePlain(body)).endsWith(squash(sig));
+}
+
+/** Remove a trailing HTML signature block (Quill paragraphs / leading blank). */
+export function stripSignatureHtml(html, signature) {
+  const h = String(html || '').trim();
+  const sig = String(signature || '').trim();
+  if (!h || !sig || !bodyEndsWithSignature(h, sig)) return h;
+  const sigHtml = /<[a-z][\s\S]*>/i.test(sig)
+    ? sig.replace(/^(?:\s*<p>(?:\s*<br\s*\/?>\s*)?<\/p>)+/i, '').trim()
+    : '';
+  if (sigHtml) {
+    const idx = h.toLowerCase().lastIndexOf(sigHtml.toLowerCase());
+    if (idx > 0) {
+      return h.slice(0, idx).replace(/(?:<p><br\s*\/?><\/p>\s*)+$/i, '').trim();
+    }
+  }
+  let out = h;
+  for (let i = 0; i < 16; i += 1) {
+    if (!bodyEndsWithSignature(out, sig)) break;
+    const next = out.replace(/(?:<p\b[^>]*>[\s\S]*?<\/p>|<br\s*\/?>)\s*$/i, '').trim();
+    if (next === out) break;
+    out = next;
+  }
+  return out;
 }
 
 /**

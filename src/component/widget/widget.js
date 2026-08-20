@@ -16,6 +16,16 @@ const PANEL_WIDTH_WIDE = 300;
 const PANEL_WIDTH_NARROW = 250;
 const url = (p) => chrome.runtime.getURL(p);
 
+/** LinkedIn apply helpers — dynamic import so widget.js loads even before this chunk is fetched. */
+async function loadLinkedInDom() {
+  if (!/(^|\.)linkedin\.com$/i.test(location.hostname.replace(/^www\./, ''))) return null;
+  try {
+    return await import(url('src/service/linkedin-dom.js'));
+  } catch {
+    return null;
+  }
+}
+
 function panelWidthForVw(vw = window.innerWidth) {
   return vw >= PANEL_WIDE_MIN_VW ? PANEL_WIDTH_WIDE : PANEL_WIDTH_NARROW;
 }
@@ -35,6 +45,8 @@ export async function startWidget() {
   // set AFTER this check so a later job navigation can still build.)
   if (decideView(location.href) === 'none') return;
   window.__jobsimpWidget = chrome.runtime.id;
+
+  const li = await loadLinkedInDom();
 
   const [badgeMarkup, panelMarkup] = await Promise.all([
     loadTemplate('src/component/widget/badge.html'),
@@ -535,7 +547,7 @@ export async function startWidget() {
   function fillResumeSelect() {
     const ready = user && resumes.length;
     el('authGate').style.display = ready ? 'none' : 'block';
-    el('main').style.display = ready ? 'block' : 'none';
+    el('main').style.display = ready ? 'flex' : 'none';
     if (!ready) return;
     const defId = resumes.find((r) => r.isDefault)?.id || resumes[0]?.id || null;
     // Keep user's in-session pick if still present; otherwise fall back to default resume.
@@ -626,6 +638,7 @@ export async function startWidget() {
     discoveryCache.delete(u);
     currentJD = null;
     dismissedUrl = null;
+    hidePostSubmitUI();
     // reset stale content for the new URL
     el('jobCard').style.display = 'none'; el('peopleBox').style.display = 'none';
     el('matchBox').style.display = 'none'; el('analysisBox').style.display = 'none'; setStatus('');
@@ -682,28 +695,77 @@ export async function startWidget() {
   };
 
   // ---- application mode (phase 2): consolidated Q&A + single mirrored nav button ----
-  const NAV_RE = /^\s*(next|continue|save and continue|save & continue|review|next step|proceed|apply|submit application|submit|easy apply|review your application)\s*$/i;
-  const SUBMITTED_RE = /(thank you for applying|application (has been |was )?(submitted|received|sent)|successfully (submitted|applied))/i;
+  const NAV_RE = /^\s*(next|continue|save and continue|save & continue|review|next step|proceed|apply and save|apply without saving|apply|submit application|submit|easy apply|review your application)\s*$/i;
+  const SUBMITTED_RE = /(thank you for applying|application (has been |was )?(submitted|received|sent)|successfully (submitted|applied)|your application was sent)/i;
+
+  let submitPoll = null;
+  /** After submit: { jobId, resumeId } for outreach compose handoff. */
+  let postSubmit = null;
+
+  function submittedPageText() {
+    let text = (document.body?.innerText || '').slice(0, 6000);
+    if (li) {
+      const modal = li.linkedInApplyRoot();
+      if (modal) text += `\n${(modal.innerText || modal.textContent || '').slice(0, 4000)}`;
+      for (const dlg of li.deepQueryAll('[role=dialog]')) {
+        text += `\n${(dlg.innerText || dlg.textContent || '').slice(0, 2000)}`;
+      }
+    }
+    return text;
+  }
+
+  function showPostSubmitUI(jobId, resumeId) {
+    postSubmit = { jobId: jobId || '', resumeId: resumeId || '' };
+    el('postSubmitBox').style.display = 'block';
+    el('applyRow').style.display = 'none';
+    el('navBtn').style.display = 'none';
+  }
+
+  function hidePostSubmitUI() {
+    postSubmit = null;
+    el('postSubmitBox').style.display = 'none';
+    if (!applying) el('applyRow').style.display = 'grid';
+  }
+
+  function stopSubmitPoll() {
+    if (submitPoll) { clearInterval(submitPoll); submitPoll = null; }
+  }
+
+  function startSubmitPoll() {
+    stopSubmitPoll();
+    submitPoll = setInterval(async () => {
+      if (!applying) { stopSubmitPoll(); return; }
+      if (await checkSubmitted()) stopSubmitPoll();
+    }, 1500);
+  }
 
   function findHostNav() {
-    return [...document.querySelectorAll('button, input[type=submit], [role=button]')]
-      .filter((b) => b.offsetParent !== null && !b.disabled)
-      .find((b) => NAV_RE.test((b.textContent || b.value || '').replace(/\s+/g, ' ').trim())) || null;
+    if (li) {
+      const nav = li.findLinkedInNavButton(li.linkedInApplyRoot() || undefined);
+      if (nav) return nav;
+    }
+    const btns = [...document.querySelectorAll('button, input[type=submit], [role=button]')]
+      .filter((b) => b.offsetParent !== null && !b.disabled);
+    return btns.find((b) => NAV_RE.test((b.textContent || b.value || '').replace(/\s+/g, ' ').trim())) || null;
   }
 
   function setApplyUI(on) {
+    el('panel').classList.toggle('applying', !!on);
     el('applyRow').style.display = on ? 'none' : 'grid';
-    el('applyBox').style.display = on ? 'block' : 'none';
+    el('applyBox').style.display = on ? 'flex' : 'none';
     el('navBtn').style.display = 'none';
     if (on) {
+      hidePostSubmitUI();
       el('matchBox').style.display = 'none';
       el('analysisBox').style.display = 'none';
       el('analyzeBtn').style.display = 'none';
       document.addEventListener('click', onHostClick, true);
+      startSubmitPoll();
     } else {
       el('qaList').innerHTML = '';
       hostNavBtn = null;
       document.removeEventListener('click', onHostClick, true);
+      stopSubmitPoll();
     }
   }
 
@@ -717,6 +779,7 @@ export async function startWidget() {
       || e.target?.closest?.('button, input[type=submit], [role=button]');
     if (!btn || host.contains(btn)) return; // not a button / our own panel
     if (!NAV_RE.test((btn.textContent || btn.value || '').replace(/\s+/g, ' ').trim())) return;
+    if (li && !li.isLinkedInApplyScopedButton(btn)) return;
     send('application.advance', { ...applying, url: pageUrl() });
     const before = pageUrl();
     setTimeout(async () => {
@@ -793,14 +856,32 @@ export async function startWidget() {
   /** Submitted page → finalize: job saved w/ extract, ephemeral data purged. */
   async function checkSubmitted() {
     if (!applying) return false;
-    if (!SUBMITTED_RE.test((document.body?.innerText || '').slice(0, 4000))) return false;
+    if (!SUBMITTED_RE.test(submittedPageText())) return false;
     const done = { ...applying };
+    const resumeId = done.resumeId || '';
     applying = null;
-    await send('application.complete', done);
+    const res = await send('application.complete', done);
     setApplyUI(false);
+    const jobId = res?.data?.trackedJobId || '';
+    showPostSubmitUI(jobId, resumeId);
     setStatus('Application submitted — saved to your dashboard. 🎉', 'ok');
     return true;
   }
+
+  el('composeEmailBtn').onclick = async () => {
+    if (!alive()) { kill(); return; }
+    let jobId = postSubmit?.jobId || '';
+    const resumeId = postSubmit?.resumeId || activeResumeId || '';
+    if (!jobId && currentJD) {
+      const list = await send('job.list');
+      const rows = list?.data || [];
+      const key = currentJD.jobKey || jobCacheKey(currentJD.url || pageUrl(), currentJD.jobId || '');
+      const hit = rows.find((j) => jobCacheKey(j.url || '', j.externalJobId || '') === key && j.status === 'Applied');
+      jobId = hit?.id || '';
+    }
+    if (!jobId) { setStatus('Could not find this job in your tracker. Open Outreach from the dashboard.', 'warn'); return; }
+    await send('open.outreach.compose', { jobId, resumeId });
+  };
 
   try {
     chrome.runtime.onMessage.addListener((m) => {

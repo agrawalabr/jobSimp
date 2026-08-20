@@ -950,13 +950,13 @@ var require_lodash = __commonJS({
     var DataView2 = getNative2(root2, "DataView");
     var Map3 = getNative2(root2, "Map");
     var Promise3 = getNative2(root2, "Promise");
-    var Set2 = getNative2(root2, "Set");
+    var Set3 = getNative2(root2, "Set");
     var WeakMap3 = getNative2(root2, "WeakMap");
     var nativeCreate2 = getNative2(Object, "create");
     var dataViewCtorString2 = toSource2(DataView2);
     var mapCtorString2 = toSource2(Map3);
     var promiseCtorString2 = toSource2(Promise3);
-    var setCtorString2 = toSource2(Set2);
+    var setCtorString2 = toSource2(Set3);
     var weakMapCtorString2 = toSource2(WeakMap3);
     var symbolProto3 = Symbol3 ? Symbol3.prototype : void 0;
     var symbolValueOf3 = symbolProto3 ? symbolProto3.valueOf : void 0;
@@ -1290,7 +1290,7 @@ var require_lodash = __commonJS({
     }
     var getSymbols2 = nativeGetSymbols3 ? overArg2(nativeGetSymbols3, Object) : stubArray2;
     var getTag2 = baseGetTag2;
-    if (DataView2 && getTag2(new DataView2(new ArrayBuffer(1))) != dataViewTag6 || Map3 && getTag2(new Map3()) != mapTag7 || Promise3 && getTag2(Promise3.resolve()) != promiseTag2 || Set2 && getTag2(new Set2()) != setTag7 || WeakMap3 && getTag2(new WeakMap3()) != weakMapTag4) {
+    if (DataView2 && getTag2(new DataView2(new ArrayBuffer(1))) != dataViewTag6 || Map3 && getTag2(new Map3()) != mapTag7 || Promise3 && getTag2(Promise3.resolve()) != promiseTag2 || Set3 && getTag2(new Set3()) != setTag7 || WeakMap3 && getTag2(new WeakMap3()) != weakMapTag4) {
       getTag2 = function(value) {
         var result = objectToString2.call(value), Ctor = result == objectTag6 ? value.constructor : void 0, ctorString = Ctor ? toSource2(Ctor) : void 0;
         if (ctorString) {
@@ -1574,13 +1574,13 @@ var require_lodash2 = __commonJS({
     var DataView2 = getNative2(root2, "DataView");
     var Map3 = getNative2(root2, "Map");
     var Promise3 = getNative2(root2, "Promise");
-    var Set2 = getNative2(root2, "Set");
+    var Set3 = getNative2(root2, "Set");
     var WeakMap3 = getNative2(root2, "WeakMap");
     var nativeCreate2 = getNative2(Object, "create");
     var dataViewCtorString2 = toSource2(DataView2);
     var mapCtorString2 = toSource2(Map3);
     var promiseCtorString2 = toSource2(Promise3);
-    var setCtorString2 = toSource2(Set2);
+    var setCtorString2 = toSource2(Set3);
     var weakMapCtorString2 = toSource2(WeakMap3);
     var symbolProto3 = Symbol3 ? Symbol3.prototype : void 0;
     var symbolValueOf3 = symbolProto3 ? symbolProto3.valueOf : void 0;
@@ -2029,7 +2029,7 @@ var require_lodash2 = __commonJS({
       });
     };
     var getTag2 = baseGetTag2;
-    if (DataView2 && getTag2(new DataView2(new ArrayBuffer(1))) != dataViewTag6 || Map3 && getTag2(new Map3()) != mapTag7 || Promise3 && getTag2(Promise3.resolve()) != promiseTag2 || Set2 && getTag2(new Set2()) != setTag7 || WeakMap3 && getTag2(new WeakMap3()) != weakMapTag4) {
+    if (DataView2 && getTag2(new DataView2(new ArrayBuffer(1))) != dataViewTag6 || Map3 && getTag2(new Map3()) != mapTag7 || Promise3 && getTag2(Promise3.resolve()) != promiseTag2 || Set3 && getTag2(new Set3()) != setTag7 || WeakMap3 && getTag2(new WeakMap3()) != weakMapTag4) {
       getTag2 = function(value) {
         var result = baseGetTag2(value), Ctor = result == objectTag6 ? value.constructor : void 0, ctorString = Ctor ? toSource2(Ctor) : "";
         if (ctorString) {
@@ -3965,8 +3965,8 @@ var Promise2 = getNative_default(root_default, "Promise");
 var Promise_default = Promise2;
 
 // node_modules/lodash-es/_Set.js
-var Set = getNative_default(root_default, "Set");
-var Set_default = Set;
+var Set2 = getNative_default(root_default, "Set");
+var Set_default = Set2;
 
 // node_modules/lodash-es/_getTag.js
 var mapTag2 = "[object Map]";
@@ -11844,15 +11844,142 @@ var RESUME_ACCEPT = Object.freeze([
 ]).join(",");
 
 // src/static/signatures.js
-var LEADING_EMPTY_P = /^(?:\s*<p>(?:\s*<br\s*\/?>\s*)?<\/p>)+/i;
+var LEADING_EMPTY_P = /^(?:\s*<(?:p|div)(?:\s[^>]*)?>(?:\s*<br\s*\/?>\s*)?<\/(?:p|div)>)+/i;
 function looksLikeHtml(s) {
   return /<[a-z][\s\S]*>/i.test(String(s || ""));
+}
+function squashLine(html) {
+  return String(html || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim().toLowerCase();
+}
+function escapePlainLine(line) {
+  return String(line || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function signatureLinesFromHtml(body) {
+  const raw = stripSignatureLeadingBlank(body);
+  if (!raw) return [];
+  if (!looksLikeHtml(raw)) {
+    return raw.split(/\n/).map((l) => l.trim()).filter(Boolean).map(escapePlainLine);
+  }
+  const chunks = String(raw).replace(/<\/(?:p|div|h[1-6]|li)\s*>/gi, "\n").replace(/<(?:p|div|h[1-6]|li)(?:\s[^>]*)?>/gi, "").split(/<br\s*\/?>|\n/i);
+  const lines = [];
+  for (const chunk of chunks) {
+    const html = String(chunk || "").trim();
+    if (!html) continue;
+    if (!squashLine(html)) continue;
+    lines.push(html);
+  }
+  return lines;
+}
+function htmlLastLineEmpty(html) {
+  const h = String(html || "").replace(/[ \t]+$/g, "").trimEnd();
+  if (!h) return true;
+  return /(<(?:p|div)(?:\s[^>]*)?>(?:\s|&nbsp;|<br\s*\/?>)*<\/(?:p|div)>|<br\s*\/?>)\s*$/i.test(h);
+}
+var SIG_ALIGN = /* @__PURE__ */ new Set(["left", "center", "right", "justify"]);
+var SIG_BLOCK_STYLE = "margin: 0;padding: 0;text-align-last: left;";
+function escapeAttr(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+function escapeRe(s) {
+  return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function signatureBlockAlign(html) {
+  const m = String(html || "").match(/text-align-last:\s*(left|center|right|justify)/i);
+  const align = (m?.[1] || "left").toLowerCase();
+  return SIG_ALIGN.has(align) ? align : "left";
+}
+function signatureBlockId(html) {
+  const m = String(html || "").match(/<div\b[^>]*\bid=["']([^"']+)["'][^>]*>/i);
+  return m ? String(m[1] || "").trim() : "";
+}
+function stripSignatureBlockById(html, id) {
+  const sid = String(id || "").trim();
+  if (!sid) return String(html || "");
+  const re = new RegExp(`<div\\b[^>]*\\bid=["']${escapeRe(sid)}["'][^>]*>[\\s\\S]*?</div>`, "gi");
+  return String(html || "").replace(re, "");
+}
+function compactSignatureHtml(body, id = "") {
+  const lines = signatureLinesFromHtml(body);
+  if (!lines.length) return "";
+  const sid = String(id || signatureBlockId(body) || "").trim();
+  const inner = lines.join("<br>");
+  if (!sid) return `<div dir="ltr">${inner}</div>`;
+  const align = signatureBlockAlign(body);
+  const style = align === "left" ? SIG_BLOCK_STYLE : `margin: 0;padding: 0;text-align-last: ${align};`;
+  return `<div id="${escapeAttr(sid)}" style="${style}">${inner}</div>`;
+}
+function collapseSignatureInHtml(html, signatureBodies = []) {
+  const h = String(html || "");
+  if (!h) return h;
+  const bodies = Array.isArray(signatureBodies) ? signatureBodies : [signatureBodies];
+  for (const sig of bodies) {
+    const lines = signatureLinesFromHtml(sig);
+    if (!lines.length) continue;
+    const matches = [...h.matchAll(/<(?:p|div)\b[^>]*>[\s\S]*?<\/(?:p|div)>/gi)];
+    if (!matches.length) continue;
+    const want = lines.map(squashLine);
+    let wi = want.length - 1;
+    let startIdx = matches.length;
+    for (let i = matches.length - 1; i >= 0 && wi >= 0; i -= 1) {
+      const t = squashLine(matches[i][0]);
+      if (!t) continue;
+      if (t === want[wi] || t.includes(want[wi]) || want[wi].includes(t)) {
+        startIdx = i;
+        wi -= 1;
+        continue;
+      }
+      break;
+    }
+    if (wi >= 0 || startIdx >= matches.length) continue;
+    const start = matches[startIdx].index;
+    const last = matches[matches.length - 1];
+    const end = last.index + last[0].length;
+    return `${h.slice(0, start)}${compactSignatureHtml(sig, signatureBlockId(sig))}${h.slice(end)}`;
+  }
+  return h;
+}
+function placeSignatureInHtml(html, signatureHtml) {
+  const block = compactSignatureHtml(signatureHtml, signatureBlockId(signatureHtml));
+  if (!block) return String(html || "");
+  let h = String(html || "");
+  const id = signatureBlockId(block);
+  if (id) h = stripSignatureBlockById(h, id);
+  const collapsed = collapseSignatureInHtml(h, [block]);
+  if (id && new RegExp(`\\bid=["']${escapeRe(id)}["']`, "i").test(collapsed)) return collapsed;
+  if (collapsed !== h) return collapsed;
+  const gap = htmlLastLineEmpty(collapsed) ? "" : `<div><br></div>`;
+  return `${collapsed}${gap}${block}`;
 }
 function stripSignatureLeadingBlank(body) {
   const s = String(body || "").replace(/\s+$/, "");
   if (!s) return "";
   if (looksLikeHtml(s)) return s.replace(LEADING_EMPTY_P, "");
   return s.replace(/^\n+/, "");
+}
+function gmailUnformatHtml(htmlOrText) {
+  const raw = String(htmlOrText || "");
+  if (!raw.trim()) return "";
+  const text = looksLikeHtml(raw) ? raw.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(?:p|div|h[1-6]|li|blockquote|pre|tr)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">") : raw;
+  const lines = text.replace(/\r\n/g, "\n").replace(/\s+$/, "").split("\n");
+  if (!lines.length) return "";
+  const inner = lines.map(escapePlainLine).join("<br>");
+  return `<div>${inner}</div>`;
+}
+function zeroParagraphMargins(html) {
+  return String(html || "").replace(/<p\b([^>]*)>/gi, (_, rawAttrs) => {
+    const attrs = String(rawAttrs || "");
+    const styleMatch = attrs.match(/\sstyle\s*=\s*(['"])([\s\S]*?)\1/i);
+    if (styleMatch) {
+      const q = styleMatch[1];
+      let style = String(styleMatch[2] || "").replace(/margin(?:-[\w]+)?\s*:[^;]*;?/gi, "").replace(/\s+/g, " ").trim();
+      if (style && !style.endsWith(";")) style += ";";
+      style = `${style} margin: 0 !important`.trim();
+      const rest2 = attrs.replace(/\sstyle\s*=\s*(['"])([\s\S]*?)\1/i, "").trim();
+      return rest2 ? `<p ${rest2} style=${q}${style}${q}>` : `<p style=${q}${style}${q}>`;
+    }
+    const rest = attrs.trim();
+    return rest ? `<p ${rest} style="margin: 0 !important">` : '<p style="margin: 0 !important">';
+  });
 }
 
 // src/component/dashboard/lib/compose-src/shared.mjs
@@ -11917,7 +12044,7 @@ function paintAlignCycleBtn(btn, align) {
   btn.setAttribute("aria-label", label);
   btn.setAttribute("data-tip", label);
 }
-function wireAlignCycle(toolbarEl, getEditor) {
+function wireAlignCycle(toolbarEl, getEditor, { onFormatted } = {}) {
   if (!toolbarEl) return;
   const btns = toolbarEl.querySelectorAll("[data-align-cycle]");
   btns.forEach((btn) => {
@@ -11933,8 +12060,9 @@ function wireAlignCycle(toolbarEl, getEditor) {
       const cur = editor2.getFormat()?.align || "";
       const idx = ALIGN_CYCLE.indexOf(cur);
       const next = ALIGN_CYCLE[(idx < 0 ? 0 : idx + 1) % ALIGN_CYCLE.length];
-      editor2.format("align", next || false);
+      editor2.format("align", next || false, "user");
       paintAlignCycleBtn(btn, next);
+      onFormatted?.(editor2);
     });
   });
   const editor = typeof getEditor === "function" ? getEditor() : getEditor;
@@ -11956,7 +12084,7 @@ var font_default = "/* font.css \u2014 static font-picker chrome\n * Search: ql-
 // src/component/dashboard/lib/compose-src/font.mjs
 var STYLE_ID2 = "js-compose-font-css";
 function fontToolbarHtml({ id = "ql_font" } = {}) {
-  return `<select class="ql-font" id="${id}" name="${id}" aria-label="Font"></select>`;
+  return `<select class="ql-font" id="${id}" name="${id}" data-tip="Font" aria-label="Font"></select>`;
 }
 function fillFontSelects(toolbar) {
   fillSelect2(resolveToolbar(toolbar), "select.ql-font", COMPOSE_FONTS);
@@ -11992,7 +12120,7 @@ var STYLE_ID3 = "js-compose-block-css";
 var BLOCK_FORMATS = ["header", "blockquote", "code-block"];
 var BODY_VALUE = (COMPOSE_BLOCKS.find((b) => b.default) || COMPOSE_BLOCKS.find((b) => !b.apply) || {}).value || "body";
 function sizeToolbarHtml({ id = "ql_block" } = {}) {
-  return `<select class="ql-compose-block" id="${id}" name="${id}" aria-label="Text style"></select>`;
+  return `<select class="ql-compose-block" id="${id}" name="${id}" data-tip="Text style" aria-label="Text style"></select>`;
 }
 function fillBlockSelects(toolbar) {
   fillSelect2(resolveToolbar(toolbar), "select.ql-compose-block", COMPOSE_BLOCKS);
@@ -12024,7 +12152,7 @@ function ensureComposeBlockStyles() {
   injectStyleOnce(STYLE_ID3, buildComposeBlockCss());
 }
 function clearBlockFormats(quill2) {
-  for (const key of BLOCK_FORMATS) quill2.format(key, false);
+  for (const key of BLOCK_FORMATS) quill2.format(key, false, "user");
 }
 function applyComposeBlock(quill2, value) {
   if (!quill2) return;
@@ -12033,7 +12161,7 @@ function applyComposeBlock(quill2, value) {
   clearBlockFormats(quill2);
   if (!block?.apply) return;
   for (const [k, val] of Object.entries(block.apply)) {
-    quill2.format(k, val);
+    quill2.format(k, val, "user");
   }
 }
 function detectComposeBlock(format = {}) {
@@ -12101,16 +12229,19 @@ function wireComposeBlocks(toolbarEl, getEditor) {
 }
 
 // src/component/dashboard/lib/compose-src/utils.css
-var utils_default = "/* utils.css \u2014 toolbar chrome, pickers, color swatches shell, lists/indent\n * Search: js-quill-toolbar, ql-picker, ql-color, ql-list, ql-indent, fmt-sep\n * Dynamic .ql-color-* rules stay in utils.mjs (from COMPOSE_COLORS).\n */\n\n/* \u2500\u2500 Toolbar chrome \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.js-quill-toolbar {\n  --fmt-hit: 25px;\n  --fmt-ico: 20px;\n  flex: 1;\n  display: flex;\n  align-items: center;\n  gap: 1px;\n  border: none;\n  padding: 0;\n  margin: 0;\n  background: transparent;\n  font-family: inherit;\n  white-space: nowrap;\n  overflow: visible;\n  box-sizing: border-box;\n  color: var(--muted);\n}\n\n.js-quill-toolbar *,\n.js-quill-toolbar *::before,\n.js-quill-toolbar *::after {\n  box-sizing: border-box;\n}\n\n.js-quill-toolbar .ql-formats {\n  margin: 0;\n  display: inline-flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  float: none;\n  gap: 0;\n}\n\n.js-quill-toolbar .fmt-sep {\n  display: inline-block;\n  width: 1px;\n  height: 14px;\n  margin: 0 4px;\n  flex-shrink: 0;\n  background: color-mix(in srgb, var(--text) 12%, transparent);\n  align-self: center;\n}\n\n.js-quill-toolbar button {\n  float: none;\n  width: var(--fmt-hit);\n  height: var(--fmt-hit);\n  padding: 2px;\n  border-radius: 6px;\n  border: none;\n  background: transparent;\n  color: inherit;\n  box-shadow: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  font: inherit;\n  line-height: 1;\n}\n\n.js-quill-toolbar button svg,\n.js-quill-toolbar .ql-color-picker .ql-picker-label svg {\n  float: none;\n  display: block;\n  width: var(--fmt-ico);\n  height: var(--fmt-ico);\n  flex: none;\n}\n\n.js-quill-toolbar :is(button:hover, button.ql-active, button:focus) {\n  background: var(--accent-dim);\n  color: var(--accent);\n  outline: none;\n}\n\n.js-quill-toolbar .ql-stroke {\n  fill: none;\n  stroke: currentColor;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n  stroke-width: 2;\n}\n\n.js-quill-toolbar .ql-fill,\n.js-quill-toolbar .ql-thin,\n.js-quill-toolbar .ql-stroke.ql-thin {\n  fill: currentColor;\n  stroke-width: 1;\n}\n\n.js-quill-toolbar .ql-transparent {\n  opacity: 0.4;\n}\n\n/* \u2500\u2500 Shared picker shell (font / size / color) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.js-quill-toolbar .ql-picker {\n  position: relative;\n  float: none;\n  display: inline-block;\n  vertical-align: middle;\n  color: inherit;\n  height: var(--fmt-hit);\n  font-size: 12px;\n}\n\n.js-quill-toolbar .ql-picker-label {\n  position: relative;\n  display: inline-block;\n  height: 100%;\n  width: 100%;\n  cursor: pointer;\n  border: 1px solid var(--line);\n  border-radius: 6px;\n  background: var(--bg);\n  padding: 0 6px;\n  line-height: 22px;\n  text-align: center !important;\n  align-content: space-between !important;\n}\n\n.js-quill-toolbar .ql-picker-no-border {\n  border: none;\n  background: transparent;\n}\n\n.js-quill-toolbar .ql-picker-label:hover,\n.js-quill-toolbar .ql-picker.ql-expanded .ql-picker-label {\n  background: var(--lift);\n  border-color: var(--line);\n}\n\n.js-quill-toolbar .ql-picker-label::before {\n  display: inline-block;\n  line-height: 22px;\n}\n\n.js-quill-toolbar .ql-picker-label svg {\n  display: none;\n}\n\n.js-quill-toolbar .ql-picker-options {\n  display: none;\n  position: absolute;\n  min-width: 100%;\n  white-space: nowrap;\n  background: var(--panel);\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);\n  padding: 5px;\n  z-index: 40;\n}\n\n.js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {\n  display: block;\n}\n\n.compose-format .js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {\n  top: auto;\n  bottom: calc(100% + 5px);\n  margin-top: 0;\n  width: 152px;\n}\n\n.sig-editor .js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {\n  top: calc(100% + 4px);\n  bottom: auto;\n}\n\n.js-quill-toolbar .ql-picker-item {\n  display: block;\n  cursor: pointer;\n  color: var(--text);\n  border-radius: 6px;\n  padding: 4px 8px;\n}\n\n.js-quill-toolbar .ql-picker-item:hover,\n.js-quill-toolbar .ql-picker-item.ql-selected {\n  background: var(--accent-dim);\n  color: var(--accent);\n}\n\n.js-quill-toolbar select {\n  display: none;\n}\n\n/* \u2500\u2500 Signature toolbar strip \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.sig-editor .js-quill-toolbar {\n  flex: 0 0 auto;\n  padding: 5px 6px;\n  border-bottom: 1px solid var(--line);\n  background: linear-gradient(180deg, #1c2434 0%, #151c2a 100%);\n  overflow: visible;\n  border-radius: 12px 12px 0 0;\n}\n\n/* \u2500\u2500 Color picker shell (search: ql-color) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.js-quill-toolbar .ql-color-picker {\n  width: var(--fmt-hit);\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-label {\n  padding: 2px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-label svg {\n  display: block;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-options {\n  width: 148px;\n  padding: 3px 5px;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-item {\n  float: left;\n  width: 16px;\n  height: 16px;\n  margin: 2px;\n  padding: 0;\n  border: 1px solid transparent;\n  border-radius: 3px;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-item.ql-selected,\n.js-quill-toolbar .ql-color-picker .ql-picker-item:hover {\n  border-color: #fff;\n}\n\n.js-quill-toolbar .ql-color-picker.ql-color .ql-picker-item {\n  background: #000;\n}\n\n/* \u2500\u2500 Lists + indent (search: ql-list, ql-indent, data-list) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n:is(.compose-quill, .sig-quill) .ql-editor ol {\n  padding-left: 1.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li {\n  list-style-type: none;\n  padding-left: 1.5em;\n  position: relative;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li > .ql-ui {\n  position: absolute;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li > .ql-ui:before {\n  display: inline-block;\n  margin-left: -1.5em;\n  margin-right: 0.3em;\n  text-align: right;\n  white-space: nowrap;\n  width: 1.2em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='bullet'] > .ql-ui:before {\n  content: '\\2022';\n}\n\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list] {\n    counter-set: list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list] {\n    counter-reset: list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'] {\n  counter-increment: list-0;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'] > .ql-ui:before {\n  content: counter(list-0, decimal) '. ';\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-1 {\n  counter-increment: list-1;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-1 > .ql-ui:before {\n  content: counter(list-1, lower-alpha) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-1 {\n    counter-set: list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-1 {\n    counter-reset: list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-1:not(.ql-direction-rtl) {\n  padding-left: 3em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-1:not(.ql-direction-rtl) {\n  padding-left: 4.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-2 {\n  counter-increment: list-2;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-2 > .ql-ui:before {\n  content: counter(list-2, lower-roman) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-2 {\n    counter-set: list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-2 {\n    counter-reset: list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-2:not(.ql-direction-rtl) {\n  padding-left: 6em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-2:not(.ql-direction-rtl) {\n  padding-left: 7.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-3 {\n  counter-increment: list-3;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-3 > .ql-ui:before {\n  content: counter(list-3, decimal) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-3 {\n    counter-set: list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-3 {\n    counter-reset: list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-3:not(.ql-direction-rtl) {\n  padding-left: 9em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-3:not(.ql-direction-rtl) {\n  padding-left: 10.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-4 {\n  counter-increment: list-4;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-4 > .ql-ui:before {\n  content: counter(list-4, lower-alpha) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-4 {\n    counter-set: list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-4 {\n    counter-reset: list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-4:not(.ql-direction-rtl) {\n  padding-left: 12em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-4:not(.ql-direction-rtl) {\n  padding-left: 13.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-5 {\n  counter-increment: list-5;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-5 > .ql-ui:before {\n  content: counter(list-5, lower-roman) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-5 {\n    counter-set: list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-5 {\n    counter-reset: list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-5:not(.ql-direction-rtl) {\n  padding-left: 15em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-5:not(.ql-direction-rtl) {\n  padding-left: 16.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-6 {\n  counter-increment: list-6;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-6 > .ql-ui:before {\n  content: counter(list-6, decimal) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-6 {\n    counter-set: list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-6 {\n    counter-reset: list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-6:not(.ql-direction-rtl) {\n  padding-left: 18em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-6:not(.ql-direction-rtl) {\n  padding-left: 19.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-7 {\n  counter-increment: list-7;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-7 > .ql-ui:before {\n  content: counter(list-7, lower-alpha) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-7 {\n    counter-set: list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-7 {\n    counter-reset: list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-7:not(.ql-direction-rtl) {\n  padding-left: 21em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-7:not(.ql-direction-rtl) {\n  padding-left: 22.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-8 {\n  counter-increment: list-8;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-8 > .ql-ui:before {\n  content: counter(list-8, lower-roman) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-8 {\n    counter-set: list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-8 {\n    counter-reset: list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-8:not(.ql-direction-rtl) {\n  padding-left: 24em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-8:not(.ql-direction-rtl) {\n  padding-left: 25.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-9 {\n  counter-increment: list-9;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-9 > .ql-ui:before {\n  content: counter(list-9, decimal) '. ';\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-9:not(.ql-direction-rtl) {\n  padding-left: 27em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-9:not(.ql-direction-rtl) {\n  padding-left: 28.5em;\n}\n";
+var utils_default = "/* utils.css \u2014 toolbar chrome, pickers, color swatches shell, lists/indent\n * Search: js-quill-toolbar, ql-picker, ql-color, ql-list, ql-indent, fmt-sep\n * Dynamic .ql-color-* rules stay in utils.mjs (from COMPOSE_COLORS).\n */\n\n/* \u2500\u2500 Toolbar chrome \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.js-quill-toolbar {\n  --fmt-hit: 25px;\n  --fmt-ico: 20px;\n  flex: 1;\n  display: flex;\n  align-items: center;\n  gap: 1px;\n  border: none;\n  padding: 0;\n  margin: 0;\n  background: transparent;\n  font-family: inherit;\n  white-space: nowrap;\n  overflow: visible;\n  box-sizing: border-box;\n  color: var(--muted);\n}\n\n.js-quill-toolbar *,\n.js-quill-toolbar *::before,\n.js-quill-toolbar *::after {\n  box-sizing: border-box;\n}\n\n.js-quill-toolbar .ql-formats {\n  margin: 0;\n  display: inline-flex;\n  flex-wrap: nowrap;\n  align-items: center;\n  float: none;\n  gap: 0;\n}\n\n.js-quill-toolbar .fmt-sep {\n  display: inline-block;\n  width: 1px;\n  height: 14px;\n  margin: 0 4px;\n  flex-shrink: 0;\n  background: color-mix(in srgb, var(--text) 12%, transparent);\n  align-self: center;\n}\n\n.js-quill-toolbar button {\n  float: none;\n  width: var(--fmt-hit);\n  height: var(--fmt-hit);\n  padding: 2px;\n  border-radius: 6px;\n  border: none;\n  background: transparent;\n  color: inherit;\n  box-shadow: none;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  font: inherit;\n  line-height: 1;\n}\n\n.js-quill-toolbar button svg,\n.js-quill-toolbar .ql-color-picker .ql-picker-label svg {\n  float: none;\n  display: block;\n  width: var(--fmt-ico);\n  height: var(--fmt-ico);\n  flex: none;\n  position: relative;\n  z-index: 1;\n}\n\n.js-quill-toolbar :is(button:hover, button.ql-active, button:focus) {\n  background: var(--accent-dim);\n  color: var(--accent);\n  outline: none;\n}\n\n.js-quill-toolbar .ql-stroke {\n  fill: none;\n  stroke: currentColor;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n  stroke-width: 2;\n}\n\n.js-quill-toolbar .ql-fill,\n.js-quill-toolbar .ql-thin,\n.js-quill-toolbar .ql-stroke.ql-thin {\n  fill: currentColor;\n  stroke-width: 1;\n}\n\n.js-quill-toolbar .ql-transparent {\n  opacity: 0.4;\n}\n\n/* \u2500\u2500 Shared picker shell (font / size / color) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.js-quill-toolbar .ql-picker {\n  position: relative;\n  float: none;\n  display: inline-block;\n  vertical-align: middle;\n  color: inherit;\n  height: var(--fmt-hit);\n  font-size: 12px;\n}\n\n.js-quill-toolbar .ql-picker-label {\n  position: relative;\n  display: inline-block;\n  height: 100%;\n  width: 100%;\n  cursor: pointer;\n  border: 1px solid var(--line);\n  border-radius: 6px;\n  background: var(--bg);\n  padding: 0 6px;\n  line-height: 22px;\n  text-align: center !important;\n  align-content: space-between !important;\n}\n\n.js-quill-toolbar .ql-picker-no-border {\n  border: none;\n  background: transparent;\n}\n\n.js-quill-toolbar .ql-picker-label:hover,\n.js-quill-toolbar .ql-picker.ql-expanded .ql-picker-label {\n  background: var(--lift);\n  border-color: var(--line);\n}\n\n.js-quill-toolbar .ql-picker-label::before {\n  display: inline-block;\n  line-height: 22px;\n}\n\n.js-quill-toolbar .ql-picker-label svg {\n  display: none;\n}\n\n.js-quill-toolbar .ql-picker-options {\n  display: none;\n  position: absolute;\n  min-width: 100%;\n  white-space: nowrap;\n  background: var(--panel);\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);\n  padding: 5px;\n  z-index: 40;\n}\n\n.js-quill-toolbar .ql-picker.ql-expanded[data-tip]::after {\n  opacity: 0 !important;\n  visibility: hidden !important;\n}\n\n.compose-format .js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {\n  top: auto;\n  bottom: calc(100% + 5px);\n  margin-top: 0;\n  width: 152px;\n}\n\n.sig-editor .js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {\n  top: calc(100% + 4px);\n  bottom: auto;\n}\n\n.js-quill-toolbar .ql-picker-item {\n  display: block;\n  cursor: pointer;\n  color: var(--text);\n  border-radius: 6px;\n  padding: 4px 8px;\n}\n\n.js-quill-toolbar .ql-picker-item:hover,\n.js-quill-toolbar .ql-picker-item.ql-selected {\n  background: var(--accent-dim);\n  color: var(--accent);\n}\n\n.js-quill-toolbar select {\n  display: none;\n}\n\n/* \u2500\u2500 Signature toolbar strip \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.sig-editor .js-quill-toolbar {\n  flex: 0 0 auto;\n  padding: 5px 6px;\n  border-bottom: 1px solid var(--line);\n  background: linear-gradient(180deg, #1c2434 0%, #151c2a 100%);\n  overflow: visible;\n  border-radius: 12px 12px 0 0;\n}\n\n/* \u2500\u2500 Color picker shell (search: ql-color) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n.js-quill-toolbar .ql-color-picker {\n  width: var(--fmt-hit);\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-label {\n  padding: 2px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-label svg {\n  display: block;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-options {\n  width: 148px;\n  padding: 3px 5px;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-item {\n  float: left;\n  width: 16px;\n  height: 16px;\n  margin: 2px;\n  padding: 0;\n  border: 1px solid transparent;\n  border-radius: 3px;\n}\n\n.js-quill-toolbar .ql-color-picker .ql-picker-item.ql-selected,\n.js-quill-toolbar .ql-color-picker .ql-picker-item:hover {\n  border-color: #fff;\n}\n\n.js-quill-toolbar .ql-color-picker.ql-color .ql-picker-item {\n  background: #000;\n}\n\n/* \u2500\u2500 Lists + indent (search: ql-list, ql-indent, data-list) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n:is(.compose-quill, .sig-quill) .ql-editor ol {\n  padding-left: 1.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li {\n  list-style-type: none;\n  padding-left: 1.5em;\n  position: relative;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li > .ql-ui {\n  position: absolute;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li > .ql-ui:before {\n  display: inline-block;\n  margin-left: -1.5em;\n  margin-right: 0.3em;\n  text-align: right;\n  white-space: nowrap;\n  width: 1.2em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='bullet'] > .ql-ui:before {\n  content: '\\2022';\n}\n\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list] {\n    counter-set: list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list] {\n    counter-reset: list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'] {\n  counter-increment: list-0;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'] > .ql-ui:before {\n  content: counter(list-0, decimal) '. ';\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-1 {\n  counter-increment: list-1;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-1 > .ql-ui:before {\n  content: counter(list-1, lower-alpha) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-1 {\n    counter-set: list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-1 {\n    counter-reset: list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-1:not(.ql-direction-rtl) {\n  padding-left: 3em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-1:not(.ql-direction-rtl) {\n  padding-left: 4.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-2 {\n  counter-increment: list-2;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-2 > .ql-ui:before {\n  content: counter(list-2, lower-roman) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-2 {\n    counter-set: list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-2 {\n    counter-reset: list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-2:not(.ql-direction-rtl) {\n  padding-left: 6em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-2:not(.ql-direction-rtl) {\n  padding-left: 7.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-3 {\n  counter-increment: list-3;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-3 > .ql-ui:before {\n  content: counter(list-3, decimal) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-3 {\n    counter-set: list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-3 {\n    counter-reset: list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-3:not(.ql-direction-rtl) {\n  padding-left: 9em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-3:not(.ql-direction-rtl) {\n  padding-left: 10.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-4 {\n  counter-increment: list-4;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-4 > .ql-ui:before {\n  content: counter(list-4, lower-alpha) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-4 {\n    counter-set: list-5 list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-4 {\n    counter-reset: list-5 list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-4:not(.ql-direction-rtl) {\n  padding-left: 12em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-4:not(.ql-direction-rtl) {\n  padding-left: 13.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-5 {\n  counter-increment: list-5;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-5 > .ql-ui:before {\n  content: counter(list-5, lower-roman) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-5 {\n    counter-set: list-6 list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-5 {\n    counter-reset: list-6 list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-5:not(.ql-direction-rtl) {\n  padding-left: 15em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-5:not(.ql-direction-rtl) {\n  padding-left: 16.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-6 {\n  counter-increment: list-6;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-6 > .ql-ui:before {\n  content: counter(list-6, decimal) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-6 {\n    counter-set: list-7 list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-6 {\n    counter-reset: list-7 list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-6:not(.ql-direction-rtl) {\n  padding-left: 18em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-6:not(.ql-direction-rtl) {\n  padding-left: 19.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-7 {\n  counter-increment: list-7;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-7 > .ql-ui:before {\n  content: counter(list-7, lower-alpha) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-7 {\n    counter-set: list-8 list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-7 {\n    counter-reset: list-8 list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-7:not(.ql-direction-rtl) {\n  padding-left: 21em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-7:not(.ql-direction-rtl) {\n  padding-left: 22.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-8 {\n  counter-increment: list-8;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-8 > .ql-ui:before {\n  content: counter(list-8, lower-roman) '. ';\n}\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-8 {\n    counter-set: list-9;\n  }\n}\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor li[data-list].ql-indent-8 {\n    counter-reset: list-9;\n  }\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-8:not(.ql-direction-rtl) {\n  padding-left: 24em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-8:not(.ql-direction-rtl) {\n  padding-left: 25.5em;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-9 {\n  counter-increment: list-9;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li[data-list='ordered'].ql-indent-9 > .ql-ui:before {\n  content: counter(list-9, decimal) '. ';\n}\n:is(.compose-quill, .sig-quill) .ql-editor .ql-indent-9:not(.ql-direction-rtl) {\n  padding-left: 27em;\n}\n:is(.compose-quill, .sig-quill) .ql-editor li.ql-indent-9:not(.ql-direction-rtl) {\n  padding-left: 28.5em;\n}\n";
 
 // src/component/dashboard/lib/compose-src/utils.mjs
 var STYLE_ID4 = "js-compose-utils-css";
 var SEP = '<span class="fmt-sep" aria-hidden="true"></span>';
+function tipAttrs(label) {
+  return `data-tip="${label}" aria-label="${label}"`;
+}
 function utilsInlineToolbarHtml({ colorId = "ql_color" } = {}) {
-  return `<span class="ql-formats"><button type="button" class="ql-bold" aria-label="Bold"></button><button type="button" class="ql-italic" aria-label="Italic"></button><button type="button" class="ql-underline" aria-label="Underline"></button><button type="button" class="ql-strike" aria-label="Strikethrough"></button><select class="ql-color" id="${colorId}" name="${colorId}" aria-label="Text color"></select></span>`;
+  return `<span class="ql-formats"><button type="button" class="ql-bold" ${tipAttrs("Bold")}></button><button type="button" class="ql-italic" ${tipAttrs("Italic")}></button><button type="button" class="ql-underline" ${tipAttrs("Underline")}></button><button type="button" class="ql-strike" ${tipAttrs("Strikethrough")}></button><select class="ql-color" id="${colorId}" name="${colorId}" ${tipAttrs("Text color")}></select></span>`;
 }
 function utilsListToolbarHtml() {
-  return `<span class="ql-formats"><button type="button" class="ql-list" value="ordered" aria-label="Numbered list"></button><button type="button" class="ql-list" value="bullet" aria-label="Bulleted list"></button><button type="button" class="ql-indent" value="-1" aria-label="Decrease indent"></button><button type="button" class="ql-indent" value="+1" aria-label="Increase indent"></button><button type="button" class="ql-clean" aria-label="Clear formatting"></button></span>`;
+  return `<span class="ql-formats"><button type="button" class="ql-list" value="ordered" ${tipAttrs("Numbered list")}></button><button type="button" class="ql-list" value="bullet" ${tipAttrs("Bulleted list")}></button><button type="button" class="ql-indent" value="-1" ${tipAttrs("Decrease indent")}></button><button type="button" class="ql-indent" value="+1" ${tipAttrs("Increase indent")}></button><button type="button" class="ql-clean" ${tipAttrs("Clear formatting")}></button></span>`;
 }
 function toolbarSepHtml() {
   return SEP;
@@ -12124,39 +12255,118 @@ function ensureUtilsStyles() {
   injectStyleOnce(STYLE_ID4, `${utils_default}
 ${buildColorCss()}`);
 }
+function copyTip(from, to) {
+  if (!from || !to) return;
+  const tip = from.getAttribute("data-tip") || from.getAttribute("aria-label") || "";
+  if (!tip) return;
+  to.setAttribute("data-tip", tip);
+  if (!to.getAttribute("aria-label")) to.setAttribute("aria-label", tip);
+  to.removeAttribute("title");
+}
+function hydrateToolbarChrome(toolbarEl) {
+  if (!toolbarEl || toolbarEl.dataset.qlHydrated === "1") return;
+  toolbarEl.dataset.qlHydrated = "1";
+  toolbarEl.querySelectorAll("button").forEach((button) => {
+    if (button.hasAttribute("data-align-cycle")) return;
+    const name = [...button.classList].find((c) => c.startsWith("ql-"))?.slice(3);
+    if (!name || icons_default[name] == null) return;
+    const spec = icons_default[name];
+    if (typeof spec === "string") button.innerHTML = spec;
+    else {
+      const value = button.getAttribute("value") || "";
+      if (spec[value]) button.innerHTML = spec[value];
+    }
+  });
+  const pickers = [];
+  toolbarEl.querySelectorAll("select").forEach((select) => {
+    if (select.closest(".ql-picker") || select.previousElementSibling?.classList.contains("ql-picker")) return;
+    const picker = select.classList.contains("ql-color") || select.classList.contains("ql-background") ? new color_picker_default(select, icons_default.color) : new picker_default(select);
+    pickers.push(picker);
+  });
+  if (pickers.length && toolbarEl.dataset.qlPickerClose !== "1") {
+    toolbarEl.dataset.qlPickerClose = "1";
+    document.addEventListener("click", (e) => {
+      pickers.forEach((picker) => {
+        if (!picker.container.contains(e.target)) picker.close();
+      });
+    });
+  }
+}
 function wireUtilsToolbar(toolbarEl) {
   if (!toolbarEl) return;
   toolbarEl.querySelectorAll(".ql-color-picker .ql-picker-label").forEach((label) => {
     label.classList.add("ql-picker-no-border");
   });
+  toolbarEl.querySelectorAll("button[aria-label]").forEach((el) => copyTip(el, el));
+  toolbarEl.querySelectorAll(".ql-picker").forEach((picker) => {
+    const sibling = picker.nextElementSibling;
+    const sel = picker.querySelector("select") || (sibling?.tagName === "SELECT" ? sibling : null);
+    copyTip(sel, picker);
+  });
 }
 
 // src/component/dashboard/lib/compose-src/editor.css
-var editor_default2 = "/* editor.css \u2014 Quill host shell (compose-quill / sig-quill)\n * Search: compose-quill, sig-quill, ql-editor, ql-blank, ql-clipboard\n */\n\n:is(.compose-quill, .sig-quill) {\n  box-sizing: border-box;\n  position: relative;\n  margin: 0;\n  height: auto;\n  font-family: inherit;\n  font-size: 13px;\n  background: transparent;\n  border: none;\n  box-shadow: none;\n}\n\n:is(.compose-quill, .sig-quill) > .ql-toolbar,\n:is(.compose-quill, .sig-quill) > .ql-tooltip {\n  display: none;\n}\n\n:is(.compose-quill, .sig-quill) .ql-hidden {\n  display: none;\n}\n\n:is(.compose-quill, .sig-quill) .ql-clipboard {\n  left: -100000px;\n  height: 1px;\n  overflow-y: hidden;\n  position: absolute;\n  top: 50%;\n}\n\n:is(.compose-quill, .sig-quill) .ql-clipboard p {\n  margin: 0;\n  padding: 0;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor {\n  box-sizing: border-box;\n  position: relative;\n  counter-reset: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  height: auto;\n  outline: none;\n  overflow-y: visible;\n  padding: 12px 14px;\n  tab-size: 4;\n  -moz-tab-size: 4;\n  text-align: left;\n  white-space: pre-wrap;\n  word-wrap: break-word;\n  color: var(--text);\n  line-height: 1.5;\n  font-family: inherit;\n  font-size: 13px;\n  border: none;\n  cursor: text;\n}\n\n.compose-quill .ql-editor {\n  min-height: var(--compose-skel-h, 148px);\n}\n\n.sig-quill .ql-editor {\n  min-height: 140px;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor > * {\n  cursor: text;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor p,\n:is(.compose-quill, .sig-quill) .ql-editor ol,\n:is(.compose-quill, .sig-quill) .ql-editor pre,\n:is(.compose-quill, .sig-quill) .ql-editor blockquote,\n:is(.compose-quill, .sig-quill) .ql-editor h1,\n:is(.compose-quill, .sig-quill) .ql-editor h2,\n:is(.compose-quill, .sig-quill) .ql-editor h3,\n:is(.compose-quill, .sig-quill) .ql-editor h4,\n:is(.compose-quill, .sig-quill) .ql-editor h5,\n:is(.compose-quill, .sig-quill) .ql-editor h6 {\n  margin: 0;\n  padding: 0;\n}\n\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor :is(p, h1, h2, h3, h4, h5, h6) {\n    counter-set: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor :is(p, h1, h2, h3, h4, h5, h6) {\n    counter-reset: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor.ql-blank::before {\n  color: var(--muted);\n  content: attr(data-placeholder);\n  font-style: normal;\n  left: 14px;\n  right: 14px;\n  pointer-events: none;\n  position: absolute;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor a {\n  color: var(--accent);\n  text-decoration: underline;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor img {\n  display: block;\n  max-width: 100%;\n}\n";
+var editor_default2 = "/* editor.css \u2014 Quill host shell (compose-quill / sig-quill)\n * Search: compose-quill, sig-quill, ql-editor, ql-blank, ql-clipboard\n */\n\n:is(.compose-quill, .sig-quill) {\n  box-sizing: border-box;\n  position: relative;\n  margin: 0;\n  height: auto;\n  font-family: inherit;\n  font-size: 13px;\n  background: transparent;\n  border: none;\n  box-shadow: none;\n}\n\n:is(.compose-quill, .sig-quill) > .ql-toolbar,\n:is(.compose-quill, .sig-quill) > .ql-tooltip {\n  display: none;\n}\n\n:is(.compose-quill, .sig-quill) .ql-hidden {\n  display: none;\n}\n\n:is(.compose-quill, .sig-quill) .ql-clipboard {\n  left: -100000px;\n  height: 1px;\n  overflow-y: hidden;\n  position: absolute;\n  top: 50%;\n}\n\n:is(.compose-quill, .sig-quill) .ql-clipboard p {\n  margin: 0;\n  padding: 0;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor {\n  box-sizing: border-box;\n  position: relative;\n  counter-reset: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  height: auto;\n  outline: none;\n  overflow-y: visible;\n  padding: 12px 14px;\n  tab-size: 4;\n  -moz-tab-size: 4;\n  text-align: left;\n  white-space: pre-wrap;\n  word-wrap: break-word;\n  color: var(--text);\n  line-height: 1.5;\n  font-family: inherit;\n  font-size: 13px;\n  border: none;\n  cursor: text;\n}\n\n.compose-quill .ql-editor {\n  min-height: var(--compose-skel-h, 148px);\n}\n\n.compose-quill .ql-editor > [data-js-sig],\n.compose-quill .ql-editor > .js-sig-block {\n  margin: 0;\n  padding: 0;\n}\n\n.sig-quill .ql-editor {\n  min-height: 140px;\n}\n\n.sig-quill.gmail-sig-editor {\n  min-height: 140px;\n  padding: 12px 14px;\n  outline: none;\n  overflow-y: auto;\n  white-space: pre-wrap;\n  word-wrap: break-word;\n  color: var(--text);\n  line-height: 1.5;\n  font-family: inherit;\n  font-size: 13px;\n  cursor: text;\n  box-sizing: border-box;\n}\n\n.sig-quill.gmail-sig-editor.is-blank::before {\n  content: attr(data-placeholder);\n  color: var(--muted);\n  pointer-events: none;\n  white-space: pre-wrap;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor > * {\n  cursor: text;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor p,\n:is(.compose-quill, .sig-quill) .ql-editor ol,\n:is(.compose-quill, .sig-quill) .ql-editor pre,\n:is(.compose-quill, .sig-quill) .ql-editor blockquote,\n:is(.compose-quill, .sig-quill) .ql-editor h1,\n:is(.compose-quill, .sig-quill) .ql-editor h2,\n:is(.compose-quill, .sig-quill) .ql-editor h3,\n:is(.compose-quill, .sig-quill) .ql-editor h4,\n:is(.compose-quill, .sig-quill) .ql-editor h5,\n:is(.compose-quill, .sig-quill) .ql-editor h6 {\n  margin: 0;\n  padding: 0;\n}\n\n@supports (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor :is(p, h1, h2, h3, h4, h5, h6) {\n    counter-set: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n@supports not (counter-set: none) {\n  :is(.compose-quill, .sig-quill) .ql-editor :is(p, h1, h2, h3, h4, h5, h6) {\n    counter-reset: list-0 list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;\n  }\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor.ql-blank::before {\n  color: var(--muted);\n  content: attr(data-placeholder);\n  font-style: normal;\n  left: 14px;\n  right: 14px;\n  pointer-events: none;\n  position: absolute;\n}\n\n/* Floating undo/redo \u2014 top-right of compose body */\n.compose-quill .compose-history {\n  position: absolute;\n  top: 8px;\n  right: 10px;\n  z-index: 3;\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  overflow: visible;\n}\n\n.compose-quill.has-history .ql-editor {\n  padding-right: 80px;\n}\n\n.compose-quill.has-history .ql-editor.ql-blank::before {\n  right: 80px;\n}\n\n.compose-quill .compose-history-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: 1px solid transparent;\n  border-radius: 8px;\n  background: color-mix(in srgb, var(--panel) 70%, transparent);\n  color: var(--muted);\n  cursor: pointer;\n  overflow: visible;\n  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;\n}\n\n.compose-quill .compose-history-btn svg {\n  width: 15px;\n  height: 15px;\n  display: block;\n  flex-shrink: 0;\n  fill: none;\n  stroke: currentColor;\n  stroke-width: 2;\n  stroke-linecap: round;\n  stroke-linejoin: round;\n}\n\n.compose-quill .compose-history-btn:hover:not(:disabled) {\n  background: var(--lift);\n  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));\n  color: var(--accent);\n}\n\n.compose-quill .compose-history-btn:disabled {\n  color: color-mix(in srgb, var(--muted) 70%, transparent);\n  border-color: color-mix(in srgb, var(--line) 80%, transparent);\n  opacity: 0.55;\n  cursor: default;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor a {\n  color: var(--accent);\n  text-decoration: underline;\n}\n\n:is(.compose-quill, .sig-quill) .ql-editor img {\n  display: block;\n  max-width: 100%;\n}\n";
 
 // src/component/dashboard/lib/compose-src/editor.mjs
 var EDITOR_STYLE_ID = "js-compose-editor-css";
 var quill = null;
 var sigQuill = null;
+var sigHost = null;
+var composeQuills = /* @__PURE__ */ new WeakMap();
 var sigMark = null;
 var appliedSigText = "";
+var appliedSigHtml = "";
 try {
   const Font = quill_default.import("formats/font");
   Font.whitelist = COMPOSE_FONTS.map((f) => f.value).filter(Boolean);
   quill_default.register(Font, true);
 } catch {
 }
-function toolbarControlIds(toolbarEl) {
-  if (toolbarEl?.id === "sigQuillToolbar") {
+var BlockEmbed2 = quill_default.import("blots/block/embed");
+var JsSigBlot = class extends BlockEmbed2 {
+  static blotName = "js-sig";
+  static tagName = "DIV";
+  static className = "js-sig-block";
+  static create(value) {
+    const node = super.create();
+    node.setAttribute("contenteditable", "false");
+    node.setAttribute("data-js-sig", "1");
+    const wrap = document.createElement("div");
+    wrap.innerHTML = String(value || "");
+    const src = wrap.querySelector("div") || wrap.firstElementChild;
+    if (src) {
+      if (src.id) node.id = src.id;
+      const style = src.getAttribute("style");
+      if (style) node.setAttribute("style", style);
+      node.innerHTML = src.innerHTML;
+    }
+    node.setAttribute("contenteditable", "false");
+    node.setAttribute("data-js-sig", "1");
+    return node;
+  }
+  static value(node) {
+    const id = node.id || "";
+    const style = node.getAttribute("style") || "margin: 0;padding: 0;text-align-last: left;";
+    return `<div id="${id}" style="${style}">${node.innerHTML}</div>`;
+  }
+};
+try {
+  quill_default.register(JsSigBlot, true);
+} catch {
+}
+function toolbarControlIds(toolbarEl, idPrefix = "") {
+  if (toolbarEl?.id === "sigQuillToolbar" || toolbarEl?.dataset?.cid === "sigQuillToolbar") {
     return { font: "sig_ql_font", block: "sig_ql_block", color: "sig_ql_color" };
   }
-  return { font: "ql_font", block: "ql_block", color: "ql_color" };
+  const p = idPrefix || "";
+  return { font: `${p}ql_font`, block: `${p}ql_block`, color: `${p}ql_color` };
 }
-function assembleComposeToolbar(toolbar, { force = false } = {}) {
+function assembleComposeToolbar(toolbar, { force = false, idPrefix = "" } = {}) {
   const root2 = resolveToolbar(toolbar);
   if (!root2) return null;
   if (!force && root2.dataset.composeMounted === "1") return root2;
-  const ids = toolbarControlIds(root2);
+  const ids = toolbarControlIds(root2, idPrefix);
   root2.innerHTML = [
     `<span class="ql-formats">${fontToolbarHtml({ id: ids.font })}${sizeToolbarHtml({ id: ids.block })}</span>`,
     toolbarSepHtml(),
@@ -12169,23 +12379,109 @@ function assembleComposeToolbar(toolbar, { force = false } = {}) {
   root2.dataset.composeMounted = "1";
   delete root2.dataset.composeBlockWired;
   delete root2.dataset.alignSelWired;
+  delete root2.dataset.qlHydrated;
+  delete root2.dataset.qlPickerClose;
+  delete root2.dataset.gmailSigWired;
   return root2;
 }
 function ensureEditorStyles() {
   injectStyleOnce(EDITOR_STYLE_ID, editor_default2);
 }
-function makeQuill(host, { toolbar, placeholder, onChange } = {}) {
+function formatActive(value) {
+  return value != null && value !== false && value !== "";
+}
+function isEditorFresh(quill2) {
+  if (!quill2) return true;
+  const text = String(quill2.getText() || "").replace(/\n$/, "");
+  if (text.trim()) return false;
+  for (const op of quill2.getContents()?.ops || []) {
+    const attrs = op.attributes;
+    if (!attrs) continue;
+    if (Object.values(attrs).some(formatActive)) return false;
+  }
+  const range = quill2.getSelection();
+  if (!range) return true;
+  const pending = quill2.getFormat(range) || {};
+  return !Object.values(pending).some(formatActive);
+}
+var UNDO_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>';
+var REDO_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg>';
+function syncHistoryButtons(quill2) {
+  const host = quill2?.container;
+  const bar = host?.querySelector(".compose-history");
+  if (!bar) return;
+  const undoBtn = bar.querySelector('[data-history="undo"]');
+  const redoBtn = bar.querySelector('[data-history="redo"]');
+  const stack = quill2.history?.stack;
+  if (undoBtn) undoBtn.disabled = !stack?.undo?.length;
+  if (redoBtn) redoBtn.disabled = !stack?.redo?.length;
+}
+function syncPlaceholder(quill2) {
+  if (!quill2?.root) return;
+  const fresh = isEditorFresh(quill2);
+  quill2.root.classList.toggle("ql-blank", fresh);
+  syncHistoryButtons(quill2);
+}
+function wirePlaceholder(quill2) {
+  const sync = () => syncPlaceholder(quill2);
+  quill2.on("text-change", sync);
+  quill2.on("selection-change", sync);
+  sync();
+}
+function wireUndoRedo(quill2) {
+  const undo = () => {
+    quill2.history.undo();
+  };
+  const redo = () => {
+    quill2.history.redo();
+  };
+  quill2.keyboard.addBinding({ key: "y", ctrlKey: true }, redo);
+  quill2.keyboard.addBinding({ key: "y", metaKey: true }, redo);
+  if (/Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || "")) {
+    quill2.keyboard.addBinding({ key: "z", ctrlKey: true, shiftKey: false }, undo);
+    quill2.keyboard.addBinding({ key: ["z", "Z"], ctrlKey: true, shiftKey: true }, redo);
+  }
+}
+function mountHistoryButtons(quill2) {
+  const host = quill2?.container;
+  if (!host || host.querySelector(".compose-history")) return;
+  host.classList.add("has-history");
+  const bar = document.createElement("div");
+  bar.className = "compose-history";
+  bar.innerHTML = `<button type="button" class="compose-history-btn" data-history="undo" data-tip="Undo" data-tip-pos="below" aria-label="Undo" disabled>${UNDO_ICON}</button><button type="button" class="compose-history-btn" data-history="redo" data-tip="Redo" data-tip-pos="below" aria-label="Redo" disabled>${REDO_ICON}</button>`;
+  bar.addEventListener("mousedown", (e) => e.preventDefault());
+  bar.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-history]");
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (btn.dataset.history === "undo") quill2.history.undo();
+    else quill2.history.redo();
+    syncPlaceholder(quill2);
+  });
+  host.appendChild(bar);
+  syncHistoryButtons(quill2);
+}
+function makeQuill(host, { toolbar, placeholder, onChange, historyButtons = false, idPrefix = "" } = {}) {
   ensureEditorStyles();
   ensureUtilsStyles();
   ensureComposeFontStyles();
   ensureComposeBlockStyles();
   ensureAlignStyles();
-  const toolbarEl = toolbar ? assembleComposeToolbar(toolbar, { force: true }) : null;
+  const toolbarEl = toolbar ? assembleComposeToolbar(toolbar, { force: true, idPrefix }) : null;
   if (toolbarEl) {
     fillFontSelects(toolbarEl);
     fillBlockSelects(toolbarEl);
   }
-  const toolbarModule = toolbarEl ? { container: toolbarEl, handlers: composeBlockHandlers() } : false;
+  const toolbarModule = toolbarEl ? {
+    container: toolbarEl,
+    handlers: {
+      ...composeBlockHandlers(),
+      clean() {
+        clearComposeFormatting(this.quill);
+      }
+    }
+  } : false;
   const instance = new quill_default(host, {
     theme: "snow",
     placeholder: placeholder || "",
@@ -12198,17 +12494,30 @@ function makeQuill(host, { toolbar, placeholder, onChange } = {}) {
   for (const tip of host.querySelectorAll(".ql-tooltip")) {
     const inp = tip.querySelector("input");
     if (inp && !inp.id && !inp.name) {
-      inp.id = "ql-tip-" + Math.random().toString(36).slice(2, 9);
-      inp.name = inp.id;
+      const tipId = `${idPrefix || ""}ql_tip_${Math.random().toString(36).slice(2, 9)}`;
+      inp.id = tipId;
+      inp.name = tipId;
       inp.setAttribute("autocomplete", "off");
     }
     tip.remove();
   }
   if (toolbarEl) {
+    toolbarEl.querySelectorAll("select, input").forEach((el, i) => {
+      if (el.id || el.name) return;
+      const fid = `${idPrefix || ""}ql_field_${i}`;
+      el.id = fid;
+      el.name = fid;
+      el.setAttribute("autocomplete", "off");
+    });
+  }
+  if (toolbarEl) {
     wireUtilsToolbar(toolbarEl);
     wireComposeBlocks(toolbarEl, () => instance);
-    wireAlignCycle(toolbarEl, () => instance);
+    wireAlignCycle(toolbarEl, () => instance, { onFormatted: syncPlaceholder });
   }
+  wireUndoRedo(instance);
+  if (historyButtons) mountHistoryButtons(instance);
+  wirePlaceholder(instance);
   if (onChange) instance.on("text-change", () => onChange());
   return instance;
 }
@@ -12217,47 +12526,210 @@ function htmlToPlain(htmlOrText) {
   if (!/<[a-z][\s\S]*>/i.test(s)) return s.replace(/\s+$/, "");
   const d = document.createElement("div");
   d.innerHTML = s;
-  return String(d.textContent || "").replace(/\n$/, "").replace(/\s+$/, "");
+  d.querySelectorAll("br").forEach((br) => {
+    br.replaceWith(document.createTextNode("\n"));
+  });
+  d.querySelectorAll("p, div, li, h1, h2, h3, h4, h5, h6, blockquote, tr").forEach((el) => {
+    el.appendChild(document.createTextNode("\n"));
+  });
+  return String(d.textContent || "").replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/\n$/, "").replace(/\s+$/, "");
 }
 function looksLikeHtml2(s) {
   return /<[a-z][\s\S]*>/i.test(String(s || ""));
 }
-function initComposeEditor(host, { toolbar, onChange } = {}) {
+function initComposeEditor(host, { toolbar, onChange, idPrefix = "" } = {}) {
   if (!host) return null;
-  if (quill) {
+  const existing = composeQuills.get(host);
+  if (existing) {
     try {
-      quill.off("text-change");
+      existing.off("text-change");
     } catch {
     }
   }
   host.innerHTML = "";
-  sigMark = null;
-  appliedSigText = "";
-  quill = makeQuill(host, {
+  if (quill === existing) {
+    sigMark = null;
+    appliedSigText = "";
+    appliedSigHtml = "";
+  }
+  const instance = makeQuill(host, {
     toolbar,
-    placeholder: "Write your message\u2026"
+    idPrefix,
+    placeholder: "Write your message\u2026",
+    historyButtons: true
   });
-  quill.on("text-change", (_d, _o, source) => {
-    if (source === "user") sigMark = null;
+  instance.on("text-change", (_d, _o, source) => {
+    if (quill === instance && source === "user") sigMark = null;
     onChange?.();
   });
-  return quill;
+  composeQuills.set(host, instance);
+  quill = instance;
+  return instance;
+}
+function setActiveComposeQuill(instance) {
+  if (instance && instance !== quill) {
+    sigMark = null;
+    appliedSigText = "";
+    appliedSigHtml = "";
+  }
+  quill = instance || null;
+}
+function getComposeQuillFor(host) {
+  return host ? composeQuills.get(host) || null : null;
+}
+function destroyComposeEditor(host) {
+  if (!host) return;
+  const instance = composeQuills.get(host);
+  if (!instance) return;
+  try {
+    instance.off("text-change");
+  } catch {
+  }
+  composeQuills.delete(host);
+  if (quill === instance) quill = null;
+  host.innerHTML = "";
+}
+function insertGmailLineBreak() {
+  const sel = window.getSelection();
+  if (!sel?.rangeCount) {
+    document.execCommand("insertLineBreak");
+    return;
+  }
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const br = document.createElement("br");
+  range.insertNode(br);
+  if (!br.nextSibling) br.parentNode.appendChild(document.createElement("br"));
+  range.setStartAfter(br);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+function syncSigPlaceholder() {
+  if (!sigHost) return;
+  const empty = !htmlToPlain(sigHost.innerHTML).trim();
+  sigHost.classList.toggle("is-blank", empty);
+  sigHost.classList.toggle("ql-blank", empty);
+}
+function fillSigColorSelects(toolbarEl) {
+  fillSelect2(toolbarEl, "select.ql-color", COMPOSE_COLORS.map((c) => ({
+    value: c.color,
+    label: c.value || c.color
+  })));
+}
+function wireSigToolbar(toolbarEl, host) {
+  if (!toolbarEl || toolbarEl.dataset.gmailSigWired === "1") return;
+  toolbarEl.dataset.gmailSigWired = "1";
+  toolbarEl.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button, select, .ql-picker")) e.preventDefault();
+  });
+  toolbarEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || !toolbarEl.contains(btn)) return;
+    e.preventDefault();
+    host.focus();
+    if (btn.classList.contains("ql-bold")) document.execCommand("bold");
+    else if (btn.classList.contains("ql-italic")) document.execCommand("italic");
+    else if (btn.classList.contains("ql-underline")) document.execCommand("underline");
+    else if (btn.classList.contains("ql-strike")) document.execCommand("strikeThrough");
+    else if (btn.classList.contains("ql-clean")) {
+      const id = signatureBlockId(host.innerHTML);
+      const plain = htmlToPlain(host.innerHTML);
+      host.innerHTML = compactSignatureHtml(plain, id) || gmailUnformatHtml(plain);
+    } else if (btn.classList.contains("ql-list") && btn.value === "ordered") document.execCommand("insertOrderedList");
+    else if (btn.classList.contains("ql-list") && btn.value === "bullet") document.execCommand("insertUnorderedList");
+    else if (btn.classList.contains("ql-indent") && btn.value === "-1") document.execCommand("outdent");
+    else if (btn.classList.contains("ql-indent") && btn.value === "+1") document.execCommand("indent");
+    else if (btn.hasAttribute("data-align-cycle")) {
+      const order = ["", "center", "right", "justify"];
+      const cur = btn.dataset.align || "";
+      const next = order[(order.indexOf(cur) + 1) % order.length];
+      btn.dataset.align = next;
+      const wrap = host.querySelector(":scope > div[id]") || host;
+      wrap.style.margin = "0";
+      wrap.style.padding = "0";
+      wrap.style.textAlignLast = next || "left";
+      paintAlignCycleBtn(btn, next);
+    }
+  });
+  toolbarEl.querySelector("select.ql-font")?.addEventListener("change", (e) => {
+    host.focus();
+    const font = COMPOSE_FONTS.find((f) => f.value === e.target.value);
+    document.execCommand("fontName", false, font?.family || "Arial");
+  });
+  toolbarEl.querySelector("select.ql-color")?.addEventListener("change", (e) => {
+    host.focus();
+    if (e.target.value) document.execCommand("foreColor", false, e.target.value);
+  });
+  toolbarEl.querySelector("select.ql-compose-block")?.addEventListener("change", (e) => {
+    host.focus();
+    const key = String(e.target.value || "body");
+    const block = COMPOSE_BLOCKS.find((b) => String(b.value) === key);
+    if (!block?.apply) document.execCommand("formatBlock", false, "p");
+    else if (block.apply.header) document.execCommand("formatBlock", false, `h${block.apply.header}`);
+    else if (block.apply.blockquote) document.execCommand("formatBlock", false, "blockquote");
+    else if (block.apply["code-block"]) document.execCommand("formatBlock", false, "pre");
+  });
 }
 function initSigEditor(host, { toolbar, onChange } = {}) {
   if (!host) return null;
+  ensureEditorStyles();
+  ensureUtilsStyles();
+  ensureComposeFontStyles();
+  ensureComposeBlockStyles();
+  ensureAlignStyles();
   if (sigQuill) {
     try {
       sigQuill.off("text-change");
     } catch {
     }
+    sigQuill = null;
   }
+  sigHost = host;
+  if (host.dataset.gmailSigEditor === "1") {
+    syncSigPlaceholder();
+    return host;
+  }
+  host.dataset.gmailSigEditor = "1";
   host.innerHTML = "";
-  sigQuill = makeQuill(host, {
-    toolbar,
-    placeholder: "Name\nTitle \xB7 linkedin.com/in/\u2026",
-    onChange
+  host.classList.remove("ql-container", "ql-snow");
+  host.classList.add("gmail-sig-editor");
+  host.setAttribute("contenteditable", "true");
+  host.setAttribute("dir", "ltr");
+  host.setAttribute("spellcheck", "false");
+  host.dataset.placeholder = "Name \xB7 title \xB7 email";
+  const toolbarEl = toolbar ? assembleComposeToolbar(toolbar, { force: true }) : null;
+  if (toolbarEl) {
+    fillFontSelects(toolbarEl);
+    fillBlockSelects(toolbarEl);
+    fillSigColorSelects(toolbarEl);
+    hydrateToolbarChrome(toolbarEl);
+    toolbarEl.querySelectorAll("[data-align-cycle]").forEach((btn) => paintAlignCycleBtn(btn, ""));
+    wireUtilsToolbar(toolbarEl);
+    wireSigToolbar(toolbarEl, host);
+  }
+  host.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();
+    insertGmailLineBreak();
+    syncSigPlaceholder();
+    onChange?.();
   });
-  return sigQuill;
+  host.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const html = e.clipboardData?.getData("text/html") || "";
+    const text = e.clipboardData?.getData("text/plain") || "";
+    const frag = html ? signatureLinesFromHtml(html).join("<br>") : String(text).split(/\r?\n/).map((l) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")).filter((l) => l).join("<br>");
+    if (frag) document.execCommand("insertHTML", false, frag);
+    syncSigPlaceholder();
+    onChange?.();
+  });
+  host.addEventListener("input", () => {
+    syncSigPlaceholder();
+    onChange?.();
+  });
+  syncSigPlaceholder();
+  return host;
 }
 function getQuill() {
   return quill;
@@ -12267,26 +12739,98 @@ function getSigQuill() {
 }
 function getBodyText() {
   if (!quill) return "";
-  return String(quill.getText() || "").replace(/\n$/, "");
+  let t = String(quill.getText() || "").replace(/\n$/, "");
+  if (appliedSigText && !t.endsWith(appliedSigText)) {
+    t = !t || t.endsWith("\n") ? `${t}${appliedSigText}` : `${t}
+
+${appliedSigText}`;
+  }
+  return t;
+}
+var SIG_NODE = "data-js-sig";
+function removeSignatureBlots(editor) {
+  if (!editor?.root) return;
+  for (let i = 0; i < 12; i += 1) {
+    const el = editor.root.querySelector(`[${SIG_NODE}], .js-sig-block`);
+    if (!el) break;
+    const blot = quill_default.find(el);
+    if (blot) {
+      const idx = blot.offset(editor.scroll);
+      editor.deleteText(idx, blot.length(), "silent");
+    } else {
+      el.remove();
+    }
+  }
+}
+function mountSignatureNode(editor, blockHtml) {
+  if (!editor || !blockHtml) return;
+  removeSignatureBlots(editor);
+  const at = editor.getLength();
+  try {
+    editor.insertEmbed(at, "js-sig", blockHtml, "silent");
+  } catch {
+    try {
+      editor.insertEmbed(Math.max(0, at - 1), "js-sig", blockHtml, "silent");
+    } catch {
+      const box = document.createElement("div");
+      box.innerHTML = blockHtml;
+      const src = box.firstElementChild;
+      if (!src || !editor.root) return;
+      src.setAttribute(SIG_NODE, "1");
+      src.setAttribute("contenteditable", "false");
+      editor.root.appendChild(src);
+    }
+  }
+  const root2 = editor.root;
+  const sig = root2?.querySelector(`[${SIG_NODE}], .js-sig-block`);
+  if (sig && root2.firstElementChild === sig) root2.appendChild(sig);
+}
+function clearComposeFormatting(editor) {
+  if (!editor) return;
+  const range = editor.getSelection(true);
+  const len = editor.getLength();
+  const start = range?.length ? range.index : 0;
+  const take = range?.length ? range.length : Math.max(0, len - 1);
+  if (take <= 0) return;
+  const text = String(editor.getText(start, take) || "").replace(/\n$/, "");
+  editor.deleteText(start, take, "user");
+  const html = gmailUnformatHtml(text);
+  if (html) editor.clipboard.dangerouslyPasteHTML(start, html, "user");
+  if (appliedSigHtml) mountSignatureNode(editor, appliedSigHtml);
 }
 function getBodyHtml() {
   if (!quill) return "";
-  if (typeof quill.getSemanticHTML === "function") return quill.getSemanticHTML();
-  return quill.root?.innerHTML || "";
+  const node = quill.root?.querySelector(`[${SIG_NODE}], .js-sig-block`);
+  const fromNode = node ? compactSignatureHtml(node.outerHTML, signatureBlockId(node.outerHTML) || signatureBlockId(appliedSigHtml)) : "";
+  const block = appliedSigHtml || fromNode;
+  const clone = quill.root.cloneNode(true);
+  clone.querySelectorAll(`[${SIG_NODE}], .js-sig-block, .ql-cursor, .ql-ui`).forEach((el) => el.remove());
+  const h = clone.innerHTML;
+  const out = block ? placeSignatureInHtml(h, block) : h;
+  return zeroParagraphMargins(out);
+}
+function getSigBodyHtml(id = "") {
+  if (!sigHost) return "";
+  const sid = id || signatureBlockId(sigHost.innerHTML) || "";
+  return compactSignatureHtml(sigHost.innerHTML, sid) || htmlToPlain(sigHost.innerHTML);
 }
 function setBodyText(text) {
   if (!quill) return;
+  removeSignatureBlots(quill);
   const t = String(text || "");
   quill.setText(t);
   sigMark = null;
   appliedSigText = "";
+  appliedSigHtml = "";
   quill.setSelection(Math.min(t.length, quill.getLength()));
 }
 function setBodyHtml(html) {
   if (!quill) return;
+  removeSignatureBlots(quill);
   const h = String(html || "").trim();
   sigMark = null;
   appliedSigText = "";
+  appliedSigHtml = "";
   if (!h) {
     quill.setText("");
     return;
@@ -12297,71 +12841,51 @@ function bodyIsEmpty() {
   return !getBodyText().trim();
 }
 function getSigBodyText() {
-  if (!sigQuill) return "";
-  return String(sigQuill.getText() || "").replace(/\n$/, "");
+  if (!sigHost) return "";
+  return htmlToPlain(sigHost.innerHTML);
 }
-function getSigBodyHtml() {
-  if (!sigQuill) return "";
-  if (typeof sigQuill.getSemanticHTML === "function") return sigQuill.getSemanticHTML();
-  return sigQuill.root?.innerHTML || "";
-}
-function setSigBody(content) {
-  if (!sigQuill) return;
+function setSigBody(content, id = "") {
+  if (!sigHost) return;
   const s = String(content || "");
   if (!s.trim()) {
-    sigQuill.setText("");
+    sigHost.innerHTML = "";
+    syncSigPlaceholder();
     return;
   }
-  if (looksLikeHtml2(s)) sigQuill.clipboard.dangerouslyPasteHTML(s);
-  else sigQuill.setText(s);
+  const sid = id || signatureBlockId(s) || "";
+  const block = compactSignatureHtml(s, sid);
+  sigHost.innerHTML = block || signatureLinesFromHtml(s).join("<br>");
+  syncSigPlaceholder();
 }
 function stripAppliedSignature() {
-  if (!quill || !sigMark && !appliedSigText) return;
-  if (sigMark) {
-    const len = quill.getLength();
-    const start = Math.min(sigMark.index, Math.max(0, len - 1));
-    const del = Math.min(sigMark.length, Math.max(0, len - 1 - start));
-    if (del > 0) quill.deleteText(start, del, "silent");
-    sigMark = null;
+  if (!quill) {
+    appliedSigHtml = "";
     appliedSigText = "";
+    sigMark = null;
     return;
   }
-  const text = String(quill.getText() || "");
-  const content = text.endsWith("\n") ? text.slice(0, -1) : text;
-  for (const pad of ["\n\n", "\n", ""]) {
-    const needle = pad + appliedSigText;
-    if (!needle || !content.endsWith(needle)) continue;
-    const cut = content.length - needle.length;
-    quill.deleteText(cut, needle.length, "silent");
-    break;
-  }
+  removeSignatureBlots(quill);
+  sigMark = null;
   appliedSigText = "";
+  appliedSigHtml = "";
 }
 function syncSignatureInBody(sigBody) {
   if (!quill) return;
   stripAppliedSignature();
   const raw = stripSignatureLeadingBlank(sigBody);
   const plain = htmlToPlain(raw).replace(/^\n+/, "").replace(/\s+$/, "");
-  if (!plain) return;
-  const content = String(quill.getText() || "").replace(/\n$/, "");
-  for (const pad of ["\n\n", "\n", ""]) {
-    const needle = pad + plain;
-    if (!content.endsWith(needle)) continue;
-    const cut = content.length - needle.length;
-    if (cut >= 0) quill.deleteText(cut, needle.length, "silent");
-    break;
+  if (!plain) {
+    syncPlaceholder(quill);
+    return;
   }
   const before = String(quill.getText() || "").replace(/\n$/, "");
-  const insertAt = Math.max(0, quill.getLength() - 1);
-  if (looksLikeHtml2(raw)) {
-    quill.clipboard.dangerouslyPasteHTML(insertAt, `<p><br></p>${raw}`, "silent");
-  } else {
-    const prefix = before ? "\n\n" : "\n";
-    quill.insertText(insertAt, prefix + plain, "silent");
-  }
-  const after = String(quill.getText() || "").replace(/\n$/, "");
+  const lastEmpty = !before.trim() || before.endsWith("\n");
+  if (!lastEmpty) quill.insertText(Math.max(0, quill.getLength() - 1), "\n", "silent");
+  const block = compactSignatureHtml(raw, signatureBlockId(raw));
+  mountSignatureNode(quill, block);
   appliedSigText = plain;
-  sigMark = { index: before.length, length: Math.max(0, after.length - before.length) };
+  appliedSigHtml = block;
+  syncPlaceholder(quill);
 }
 function syncQuillMinHeight(minPx = 148) {
   const editor = quill?.root;
@@ -14957,7 +15481,7 @@ var $329d53ba9fd7125f$exports = {};
 $329d53ba9fd7125f$exports = ':host {\n  width: min-content;\n  height: 435px;\n  min-height: 230px;\n  border-radius: var(--border-radius);\n  box-shadow: var(--shadow);\n  --border-radius: 10px;\n  --category-icon-size: 18px;\n  --font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;\n  --font-size: 15px;\n  --preview-placeholder-size: 21px;\n  --preview-title-size: 1.1em;\n  --preview-subtitle-size: .9em;\n  --shadow-color: 0deg 0% 0%;\n  --shadow: .3px .5px 2.7px hsl(var(--shadow-color) / .14), .4px .8px 1px -3.2px hsl(var(--shadow-color) / .14), 1px 2px 2.5px -4.5px hsl(var(--shadow-color) / .14);\n  display: flex;\n}\n\n[data-theme="light"] {\n  --em-rgb-color: var(--rgb-color, 34, 36, 39);\n  --em-rgb-accent: var(--rgb-accent, 34, 102, 237);\n  --em-rgb-background: var(--rgb-background, 255, 255, 255);\n  --em-rgb-input: var(--rgb-input, 255, 255, 255);\n  --em-color-border: var(--color-border, rgba(0, 0, 0, .05));\n  --em-color-border-over: var(--color-border-over, rgba(0, 0, 0, .1));\n}\n\n[data-theme="dark"] {\n  --em-rgb-color: var(--rgb-color, 222, 222, 221);\n  --em-rgb-accent: var(--rgb-accent, 58, 130, 247);\n  --em-rgb-background: var(--rgb-background, 21, 22, 23);\n  --em-rgb-input: var(--rgb-input, 0, 0, 0);\n  --em-color-border: var(--color-border, rgba(255, 255, 255, .1));\n  --em-color-border-over: var(--color-border-over, rgba(255, 255, 255, .2));\n}\n\n#root {\n  --color-a: rgb(var(--em-rgb-color));\n  --color-b: rgba(var(--em-rgb-color), .65);\n  --color-c: rgba(var(--em-rgb-color), .45);\n  --padding: 12px;\n  --padding-small: calc(var(--padding) / 2);\n  --sidebar-width: 16px;\n  --duration: 225ms;\n  --duration-fast: 125ms;\n  --duration-instant: 50ms;\n  --easing: cubic-bezier(.4, 0, .2, 1);\n  width: 100%;\n  text-align: left;\n  border-radius: var(--border-radius);\n  background-color: rgb(var(--em-rgb-background));\n  position: relative;\n}\n\n@media (prefers-reduced-motion) {\n  #root {\n    --duration: 0;\n    --duration-fast: 0;\n    --duration-instant: 0;\n  }\n}\n\n#root[data-menu] button {\n  cursor: auto;\n}\n\n#root[data-menu] .menu button {\n  cursor: pointer;\n}\n\n:host, #root, input, button {\n  color: rgb(var(--em-rgb-color));\n  font-family: var(--font-family);\n  font-size: var(--font-size);\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n  line-height: normal;\n}\n\n*, :before, :after {\n  box-sizing: border-box;\n  min-width: 0;\n  margin: 0;\n  padding: 0;\n}\n\n.relative {\n  position: relative;\n}\n\n.flex {\n  display: flex;\n}\n\n.flex-auto {\n  flex: none;\n}\n\n.flex-center {\n  justify-content: center;\n}\n\n.flex-column {\n  flex-direction: column;\n}\n\n.flex-grow {\n  flex: auto;\n}\n\n.flex-middle {\n  align-items: center;\n}\n\n.flex-wrap {\n  flex-wrap: wrap;\n}\n\n.padding {\n  padding: var(--padding);\n}\n\n.padding-t {\n  padding-top: var(--padding);\n}\n\n.padding-lr {\n  padding-left: var(--padding);\n  padding-right: var(--padding);\n}\n\n.padding-r {\n  padding-right: var(--padding);\n}\n\n.padding-small {\n  padding: var(--padding-small);\n}\n\n.padding-small-b {\n  padding-bottom: var(--padding-small);\n}\n\n.padding-small-lr {\n  padding-left: var(--padding-small);\n  padding-right: var(--padding-small);\n}\n\n.margin {\n  margin: var(--padding);\n}\n\n.margin-r {\n  margin-right: var(--padding);\n}\n\n.margin-l {\n  margin-left: var(--padding);\n}\n\n.margin-small-l {\n  margin-left: var(--padding-small);\n}\n\n.margin-small-lr {\n  margin-left: var(--padding-small);\n  margin-right: var(--padding-small);\n}\n\n.align-l {\n  text-align: left;\n}\n\n.align-r {\n  text-align: right;\n}\n\n.color-a {\n  color: var(--color-a);\n}\n\n.color-b {\n  color: var(--color-b);\n}\n\n.color-c {\n  color: var(--color-c);\n}\n\n.ellipsis {\n  white-space: nowrap;\n  max-width: 100%;\n  width: auto;\n  text-overflow: ellipsis;\n  overflow: hidden;\n}\n\n.sr-only {\n  width: 1px;\n  height: 1px;\n  position: absolute;\n  top: auto;\n  left: -10000px;\n  overflow: hidden;\n}\n\na {\n  cursor: pointer;\n  color: rgb(var(--em-rgb-accent));\n}\n\na:hover {\n  text-decoration: underline;\n}\n\n.spacer {\n  height: 10px;\n}\n\n[dir="rtl"] .scroll {\n  padding-left: 0;\n  padding-right: var(--padding);\n}\n\n.scroll {\n  padding-right: 0;\n  overflow-x: hidden;\n  overflow-y: auto;\n}\n\n.scroll::-webkit-scrollbar {\n  width: var(--sidebar-width);\n  height: var(--sidebar-width);\n}\n\n.scroll::-webkit-scrollbar-track {\n  border: 0;\n}\n\n.scroll::-webkit-scrollbar-button {\n  width: 0;\n  height: 0;\n  display: none;\n}\n\n.scroll::-webkit-scrollbar-corner {\n  background-color: rgba(0, 0, 0, 0);\n}\n\n.scroll::-webkit-scrollbar-thumb {\n  min-height: 20%;\n  min-height: 65px;\n  border: 4px solid rgb(var(--em-rgb-background));\n  border-radius: 8px;\n}\n\n.scroll::-webkit-scrollbar-thumb:hover {\n  background-color: var(--em-color-border-over) !important;\n}\n\n.scroll:hover::-webkit-scrollbar-thumb {\n  background-color: var(--em-color-border);\n}\n\n.sticky {\n  z-index: 1;\n  background-color: rgba(var(--em-rgb-background), .9);\n  -webkit-backdrop-filter: blur(4px);\n  backdrop-filter: blur(4px);\n  font-weight: 500;\n  position: sticky;\n  top: -1px;\n}\n\n[dir="rtl"] .search input[type="search"] {\n  padding: 10px 2.2em 10px 2em;\n}\n\n[dir="rtl"] .search .loupe {\n  left: auto;\n  right: .7em;\n}\n\n[dir="rtl"] .search .delete {\n  left: .7em;\n  right: auto;\n}\n\n.search {\n  z-index: 2;\n  position: relative;\n}\n\n.search input, .search button {\n  font-size: calc(var(--font-size)  - 1px);\n}\n\n.search input[type="search"] {\n  width: 100%;\n  background-color: var(--em-color-border);\n  transition-duration: var(--duration);\n  transition-property: background-color, box-shadow;\n  transition-timing-function: var(--easing);\n  border: 0;\n  border-radius: 10px;\n  outline: 0;\n  padding: 10px 2em 10px 2.2em;\n  display: block;\n}\n\n.search input[type="search"]::-ms-input-placeholder {\n  color: inherit;\n  opacity: .6;\n}\n\n.search input[type="search"]::placeholder {\n  color: inherit;\n  opacity: .6;\n}\n\n.search input[type="search"], .search input[type="search"]::-webkit-search-decoration, .search input[type="search"]::-webkit-search-cancel-button, .search input[type="search"]::-webkit-search-results-button, .search input[type="search"]::-webkit-search-results-decoration {\n  -webkit-appearance: none;\n  -ms-appearance: none;\n  appearance: none;\n}\n\n.search input[type="search"]:focus {\n  background-color: rgb(var(--em-rgb-input));\n  box-shadow: inset 0 0 0 1px rgb(var(--em-rgb-accent)), 0 1px 3px rgba(65, 69, 73, .2);\n}\n\n.search .icon {\n  z-index: 1;\n  color: rgba(var(--em-rgb-color), .7);\n  position: absolute;\n  top: 50%;\n  transform: translateY(-50%);\n}\n\n.search .loupe {\n  pointer-events: none;\n  left: .7em;\n}\n\n.search .delete {\n  right: .7em;\n}\n\nsvg {\n  fill: currentColor;\n  width: 1em;\n  height: 1em;\n}\n\nbutton {\n  -webkit-appearance: none;\n  -ms-appearance: none;\n  appearance: none;\n  cursor: pointer;\n  color: currentColor;\n  background-color: rgba(0, 0, 0, 0);\n  border: 0;\n}\n\n#nav {\n  z-index: 2;\n  padding-top: 12px;\n  padding-bottom: 12px;\n  padding-right: var(--sidebar-width);\n  position: relative;\n}\n\n#nav button {\n  color: var(--color-b);\n  transition: color var(--duration) var(--easing);\n}\n\n#nav button:hover {\n  color: var(--color-a);\n}\n\n#nav svg, #nav img {\n  width: var(--category-icon-size);\n  height: var(--category-icon-size);\n}\n\n#nav[dir="rtl"] .bar {\n  left: auto;\n  right: 0;\n}\n\n#nav .bar {\n  width: 100%;\n  height: 3px;\n  background-color: rgb(var(--em-rgb-accent));\n  transition: transform var(--duration) var(--easing);\n  border-radius: 3px 3px 0 0;\n  position: absolute;\n  bottom: -12px;\n  left: 0;\n}\n\n#nav button[aria-selected] {\n  color: rgb(var(--em-rgb-accent));\n}\n\n#preview {\n  z-index: 2;\n  padding: calc(var(--padding)  + 4px) var(--padding);\n  padding-right: var(--sidebar-width);\n  position: relative;\n}\n\n#preview .preview-placeholder {\n  font-size: var(--preview-placeholder-size);\n}\n\n#preview .preview-title {\n  font-size: var(--preview-title-size);\n}\n\n#preview .preview-subtitle {\n  font-size: var(--preview-subtitle-size);\n}\n\n#nav:before, #preview:before {\n  content: "";\n  height: 2px;\n  position: absolute;\n  left: 0;\n  right: 0;\n}\n\n#nav[data-position="top"]:before, #preview[data-position="top"]:before {\n  background: linear-gradient(to bottom, var(--em-color-border), transparent);\n  top: 100%;\n}\n\n#nav[data-position="bottom"]:before, #preview[data-position="bottom"]:before {\n  background: linear-gradient(to top, var(--em-color-border), transparent);\n  bottom: 100%;\n}\n\n.category:last-child {\n  min-height: calc(100% + 1px);\n}\n\n.category button {\n  font-family: -apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif;\n  position: relative;\n}\n\n.category button > * {\n  position: relative;\n}\n\n.category button .background {\n  opacity: 0;\n  background-color: var(--em-color-border);\n  transition: opacity var(--duration-fast) var(--easing) var(--duration-instant);\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 0;\n  right: 0;\n}\n\n.category button:hover .background {\n  transition-duration: var(--duration-instant);\n  transition-delay: 0s;\n}\n\n.category button[aria-selected] .background {\n  opacity: 1;\n}\n\n.category button[data-keyboard] .background {\n  transition: none;\n}\n\n.row {\n  width: 100%;\n  position: absolute;\n  top: 0;\n  left: 0;\n}\n\n.skin-tone-button {\n  border: 1px solid rgba(0, 0, 0, 0);\n  border-radius: 100%;\n}\n\n.skin-tone-button:hover {\n  border-color: var(--em-color-border);\n}\n\n.skin-tone-button:active .skin-tone {\n  transform: scale(.85) !important;\n}\n\n.skin-tone-button .skin-tone {\n  transition: transform var(--duration) var(--easing);\n}\n\n.skin-tone-button[aria-selected] {\n  background-color: var(--em-color-border);\n  border-top-color: rgba(0, 0, 0, .05);\n  border-bottom-color: rgba(0, 0, 0, 0);\n  border-left-width: 0;\n  border-right-width: 0;\n}\n\n.skin-tone-button[aria-selected] .skin-tone {\n  transform: scale(.9);\n}\n\n.menu {\n  z-index: 2;\n  white-space: nowrap;\n  border: 1px solid var(--em-color-border);\n  background-color: rgba(var(--em-rgb-background), .9);\n  -webkit-backdrop-filter: blur(4px);\n  backdrop-filter: blur(4px);\n  transition-property: opacity, transform;\n  transition-duration: var(--duration);\n  transition-timing-function: var(--easing);\n  border-radius: 10px;\n  padding: 4px;\n  position: absolute;\n  box-shadow: 1px 1px 5px rgba(0, 0, 0, .05);\n}\n\n.menu.hidden {\n  opacity: 0;\n}\n\n.menu[data-position="bottom"] {\n  transform-origin: 100% 100%;\n}\n\n.menu[data-position="bottom"].hidden {\n  transform: scale(.9)rotate(-3deg)translateY(5%);\n}\n\n.menu[data-position="top"] {\n  transform-origin: 100% 0;\n}\n\n.menu[data-position="top"].hidden {\n  transform: scale(.9)rotate(3deg)translateY(-5%);\n}\n\n.menu input[type="radio"] {\n  clip: rect(0 0 0 0);\n  width: 1px;\n  height: 1px;\n  border: 0;\n  margin: 0;\n  padding: 0;\n  position: absolute;\n  overflow: hidden;\n}\n\n.menu input[type="radio"]:checked + .option {\n  box-shadow: 0 0 0 2px rgb(var(--em-rgb-accent));\n}\n\n.option {\n  width: 100%;\n  border-radius: 6px;\n  padding: 4px 6px;\n}\n\n.option:hover {\n  color: #fff;\n  background-color: rgb(var(--em-rgb-accent));\n}\n\n.skin-tone {\n  width: 16px;\n  height: 16px;\n  border-radius: 100%;\n  display: inline-block;\n  position: relative;\n  overflow: hidden;\n}\n\n.skin-tone:after {\n  content: "";\n  mix-blend-mode: overlay;\n  background: linear-gradient(rgba(255, 255, 255, .2), rgba(0, 0, 0, 0));\n  border: 1px solid rgba(0, 0, 0, .8);\n  border-radius: 100%;\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  left: 0;\n  right: 0;\n  box-shadow: inset 0 -2px 3px #000, inset 0 1px 2px #fff;\n}\n\n.skin-tone-1 {\n  background-color: #ffc93a;\n}\n\n.skin-tone-2 {\n  background-color: #ffdab7;\n}\n\n.skin-tone-3 {\n  background-color: #e7b98f;\n}\n\n.skin-tone-4 {\n  background-color: #c88c61;\n}\n\n.skin-tone-5 {\n  background-color: #a46134;\n}\n\n.skin-tone-6 {\n  background-color: #5d4437;\n}\n\n[data-index] {\n  justify-content: space-between;\n}\n\n[data-emoji-set="twitter"] .skin-tone:after {\n  box-shadow: none;\n  border-color: rgba(0, 0, 0, .5);\n}\n\n[data-emoji-set="twitter"] .skin-tone-1 {\n  background-color: #fade72;\n}\n\n[data-emoji-set="twitter"] .skin-tone-2 {\n  background-color: #f3dfd0;\n}\n\n[data-emoji-set="twitter"] .skin-tone-3 {\n  background-color: #eed3a8;\n}\n\n[data-emoji-set="twitter"] .skin-tone-4 {\n  background-color: #cfad8d;\n}\n\n[data-emoji-set="twitter"] .skin-tone-5 {\n  background-color: #a8805d;\n}\n\n[data-emoji-set="twitter"] .skin-tone-6 {\n  background-color: #765542;\n}\n\n[data-emoji-set="google"] .skin-tone:after {\n  box-shadow: inset 0 0 2px 2px rgba(0, 0, 0, .4);\n}\n\n[data-emoji-set="google"] .skin-tone-1 {\n  background-color: #f5c748;\n}\n\n[data-emoji-set="google"] .skin-tone-2 {\n  background-color: #f1d5aa;\n}\n\n[data-emoji-set="google"] .skin-tone-3 {\n  background-color: #d4b48d;\n}\n\n[data-emoji-set="google"] .skin-tone-4 {\n  background-color: #aa876b;\n}\n\n[data-emoji-set="google"] .skin-tone-5 {\n  background-color: #916544;\n}\n\n[data-emoji-set="google"] .skin-tone-6 {\n  background-color: #61493f;\n}\n\n[data-emoji-set="facebook"] .skin-tone:after {\n  border-color: rgba(0, 0, 0, .4);\n  box-shadow: inset 0 -2px 3px #000, inset 0 1px 4px #fff;\n}\n\n[data-emoji-set="facebook"] .skin-tone-1 {\n  background-color: #f5c748;\n}\n\n[data-emoji-set="facebook"] .skin-tone-2 {\n  background-color: #f1d5aa;\n}\n\n[data-emoji-set="facebook"] .skin-tone-3 {\n  background-color: #d4b48d;\n}\n\n[data-emoji-set="facebook"] .skin-tone-4 {\n  background-color: #aa876b;\n}\n\n[data-emoji-set="facebook"] .skin-tone-5 {\n  background-color: #916544;\n}\n\n[data-emoji-set="facebook"] .skin-tone-6 {\n  background-color: #61493f;\n}\n\n';
 
 // src/component/dashboard/lib/compose-src/emoji.css
-var emoji_default = "/* emoji.css \u2014 emoji-mart panel chrome (host markup stays in outreach.html)\n * Search: tb-emoji-picker, em-emoji-picker, emojiCloseBtn\n */\n\n.tb-emoji-picker {\n  transform: scale(0.85);\n  transform-origin: bottom left;\n  position: absolute;\n  left: -56px;\n  bottom: calc(100% - 10px);\n  z-index: 40;\n  border-radius: 14px;\n  overflow: hidden;\n  background: var(--panel);\n  border: 1px solid var(--line);\n  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);\n}\n\n.tb-emoji-picker[hidden] {\n  display: none !important;\n}\n\n.tb-emoji-head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 8px 10px 6px;\n  background: var(--bg);\n  border-bottom: 1px solid var(--line);\n}\n\n.tb-emoji-title {\n  font-size: 12px;\n  font-weight: 600;\n  color: var(--muted);\n  letter-spacing: 0.02em;\n}\n\n.tb-emoji-close {\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border-radius: 8px;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-size: 18px;\n  line-height: 1;\n  cursor: pointer;\n}\n\n.tb-emoji-close:hover {\n  background: var(--lift);\n  color: var(--text);\n  border-color: var(--line);\n}\n\n.tb-emoji-picker em-emoji-picker {\n  height: 360px;\n  width: min(352px, calc(100vw - 40px));\n  --rgb-background: 26, 33, 48;\n  --rgb-input: 15, 20, 32;\n  --rgb-color: 232, 236, 244;\n  --rgb-accent: 79, 142, 247;\n  border: none !important;\n}\n";
+var emoji_default = "/* emoji.css \u2014 emoji-mart panel chrome (host markup stays in outreach.html)\n * Search: tb-emoji-picker, em-emoji-picker, emojiCloseBtn\n */\n\n.tb-emoji-picker {\n  transform: scale(0.85);\n  transform-origin: bottom left;\n  position: absolute;\n  left: -56px;\n  bottom: calc(100% + 8px);\n  z-index: 50;\n  border-radius: 14px;\n  overflow: hidden;\n  background: var(--panel);\n  border: 1px solid var(--line);\n  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);\n}\n\n.tb-emoji-picker[hidden] {\n  display: none !important;\n}\n\n.tb-emoji-head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 8px 10px 6px;\n  background: var(--bg);\n  border-bottom: 1px solid var(--line);\n}\n\n.tb-emoji-title {\n  font-size: 12px;\n  font-weight: 600;\n  color: var(--muted);\n  letter-spacing: 0.02em;\n}\n\n.tb-emoji-close {\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border-radius: 8px;\n  border: 1px solid transparent;\n  background: transparent;\n  color: var(--muted);\n  font-size: 18px;\n  line-height: 1;\n  cursor: pointer;\n}\n\n.tb-emoji-close:hover {\n  background: var(--lift);\n  color: var(--text);\n  border-color: var(--line);\n}\n\n.tb-emoji-picker em-emoji-picker {\n  height: 360px;\n  width: min(352px, calc(100vw - 40px));\n  --rgb-background: 26, 33, 48;\n  --rgb-input: 15, 20, 32;\n  --rgb-color: 232, 236, 244;\n  --rgb-accent: 79, 142, 247;\n  border: none !important;\n}\n";
 
 // src/component/dashboard/lib/compose-src/emoji.mjs
 var STYLE_ID5 = "js-compose-emoji-css";
@@ -14990,8 +15514,10 @@ function mountEmojiPicker(host, { onSelect } = {}) {
 export {
   assembleComposeToolbar,
   bodyIsEmpty,
+  destroyComposeEditor,
   getBodyHtml,
   getBodyText,
+  getComposeQuillFor,
   getQuill,
   getSigBodyHtml,
   getSigBodyText,
@@ -15002,6 +15528,7 @@ export {
   insertEmoji,
   looksLikeHtml2 as looksLikeHtml,
   mountEmojiPicker,
+  setActiveComposeQuill,
   setBodyHtml,
   setBodyText,
   setSigBody,

@@ -11,7 +11,7 @@ const STYLE_ID = 'js-compose-font-css';
 
 /** Toolbar fragment — ids differ for compose vs signature. */
 export function fontToolbarHtml({ id = 'ql_font' } = {}) {
-  return `<select class="ql-font" id="${id}" name="${id}" aria-label="Font"></select>`;
+  return `<select class="ql-font" id="${id}" name="${id}" data-tip="Font" aria-label="Font"></select>`;
 }
 
 export function fillFontSelects(toolbar) {

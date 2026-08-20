@@ -5,7 +5,7 @@
 // the jd.analyze prompt slice can never drift apart.
 export const JD_TEXT_LIMIT = 12000;
 
-export const JOB_HOST = /(greenhouse\.io|lever\.co|myworkdayjobs\.com|workday\.com|ashbyhq\.com|icims\.com|smartrecruiters\.com|jobvite\.com|bamboohr\.com|workable\.com|recruitee\.com|breezy\.hr|applytojob\.com|rippling\.com|dover\.com|taleo\.net|successfactors\.(com|eu)|adp\.com|eightfold\.ai|teamtailor\.com|pinpointhq\.com|personio\.(de|com)|linkedin\.com|indeed\.com|glassdoor\.com|ziprecruiter\.com|monster\.com|careerbuilder\.com|dice\.com|simplyhired\.com|wellfound\.com|builtin\.com|joinhandshake\.com|jobright\.ai|simplify\.jobs|workatastartup\.com|hiring\.cafe|otta\.com|remoteok\.com|weworkremotely\.com)$/i;
+export const JOB_HOST = /(greenhouse\.io|lever\.co|myworkdayjobs\.com|workday\.com|ashbyhq\.com|icims\.com|smartrecruiters\.com|jobvite\.com|bamboohr\.com|workable\.com|recruitee\.com|breezy\.hr|applytojob\.com|rippling\.com|dover\.com|taleo\.net|successfactors\.(com|eu)|adp\.com|eightfold\.ai|teamtailor\.com|pinpointhq\.com|personio\.(de|com)|gem\.com|linkedin\.com|indeed\.com|glassdoor\.com|ziprecruiter\.com|monster\.com|careerbuilder\.com|dice\.com|simplyhired\.com|wellfound\.com|builtin\.com|joinhandshake\.com|jobright\.ai|simplify\.jobs|workatastartup\.com|hiring\.cafe|otta\.com|remoteok\.com|weworkremotely\.com)$/i;
 
 export const JOB_PATH = /(^|\/)(jobs?|jobs-guest|careers?|career|positions?|openings?|opportunities|vacancies|employment|join-?us)(\/|$)/i;
 
@@ -21,7 +21,7 @@ export function isJobUrl(u = location.href) {
 // Pure job hosts: the whole domain is jobs, so even the root is a job page (→ badge).
 // Aggregators (LinkedIn, Indeed, Glassdoor…) are deliberately NOT here — for them a
 // page only counts as a job page if the PATH is job-ish (so /feed, /messaging → none).
-export const ATS_HOST = /(greenhouse\.io|lever\.co|myworkdayjobs\.com|workday\.com|ashbyhq\.com|icims\.com|smartrecruiters\.com|jobvite\.com|bamboohr\.com|workable\.com|recruitee\.com|breezy\.hr|applytojob\.com|rippling\.com|dover\.com|taleo\.net|successfactors\.(com|eu)|adp\.com|eightfold\.ai|teamtailor\.com|pinpointhq\.com|personio\.(de|com)|jobright\.ai|simplify\.jobs|workatastartup\.com|hiring\.cafe|otta\.com|remoteok\.com|weworkremotely\.com|wellfound\.com|builtin\.com)$/i;
+export const ATS_HOST = /(greenhouse\.io|lever\.co|myworkdayjobs\.com|workday\.com|ashbyhq\.com|icims\.com|smartrecruiters\.com|jobvite\.com|bamboohr\.com|workable\.com|recruitee\.com|breezy\.hr|applytojob\.com|rippling\.com|dover\.com|taleo\.net|successfactors\.(com|eu)|adp\.com|eightfold\.ai|teamtailor\.com|pinpointhq\.com|personio\.(de|com)|gem\.com|jobright\.ai|simplify\.jobs|workatastartup\.com|hiring\.cafe|otta\.com|remoteok\.com|weworkremotely\.com|wellfound\.com|builtin\.com)$/i;
 
 // A SPECIFIC job posting (has an id / view path) vs a listing / search / landing.
 export const JOB_POSTING = new RegExp([
@@ -39,9 +39,20 @@ export const JOB_POSTING = new RegExp([
 ].join('|'), 'i');
 const POSTING_QS = /[?&](jk|jobid|gh_jid|currentjobid|reqid|job_id)=/i;
 
+function isGemHost(hostname) {
+  return /(^|\.)gem\.com$/i.test(String(hostname || '').replace(/^www\./, ''));
+}
+
+/** Gem hosted post: /{boardSlug}/{extId} (extId is opaque, often base64 `jobpost:…`). */
+function isGemPostingPath(pathname) {
+  const parts = String(pathname || '').split('/').filter(Boolean);
+  return parts.length >= 2 && parts[1].length >= 12 && !/\./.test(parts[1]);
+}
+
 export function isJobPosting(u = location.href) {
   try {
-    const { pathname, search } = new URL(u, typeof location !== 'undefined' ? location.href : u);
+    const { hostname, pathname, search } = new URL(u, typeof location !== 'undefined' ? location.href : u);
+    if (isGemHost(hostname) && isGemPostingPath(pathname)) return true;
     return JOB_POSTING.test(pathname) || POSTING_QS.test(search);
   } catch {
     return false;
@@ -81,6 +92,11 @@ export function extractJobId(u = typeof location !== 'undefined' ? location.href
     const wanted = new Set(JOB_ID_QS.map((k) => k.toLowerCase()));
     for (const [k, v] of url.searchParams.entries()) {
       if (wanted.has(k.toLowerCase()) && String(v || '').trim()) return String(v).trim();
+    }
+
+    // Gem: /11x-ai/am9icG9zdDpUNqtuCsDh08YG2vmhJM8S
+    if (isGemHost(url.hostname) && isGemPostingPath(path)) {
+      return path.split('/').filter(Boolean)[1];
     }
 
     // LinkedIn: /jobs/view/4440054893 , /jobs-guest/jobs/view/…, /jobs-guest/jobs/api/jobPosting/…

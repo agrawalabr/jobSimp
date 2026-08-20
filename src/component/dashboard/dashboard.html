@@ -2,32 +2,40 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>JobSimp Dashboard</title>
+<title>JobSimp</title>
 <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
-<h1>JobSimp Dashboard</h1>
-
-<div class="tabs">
-  <div class="tabs-left">
-    <div class="tab active" data-tab="tracker">Tracker</div>
-    <div class="tab" data-tab="outreach">Outreach</div>
+<header class="app-header">
+  <div class="brand">
+    <img class="brand-logo" src="../mail-track/logo.png" alt="" width="40" height="40">
+    <h1>JobSimp</h1>
   </div>
-  <div class="tabs-right">
-    <div class="user-menu">
-      <button type="button" class="user-btn" id="userBtn" aria-haspopup="true" aria-expanded="false">
-        <img id="userAvatar" alt="" hidden>
-        <span class="user-label" id="userLabel">Account</span>
-        <span class="caret">▾</span>
-      </button>
-      <div class="user-dd" id="userDd" role="menu">
-        <button type="button" data-account="profile">Profile</button>
-        <button type="button" data-account="resume">Resume</button>
-        <button type="button" data-account="settings">Settings</button>
+
+  <div class="header-actions">
+    <nav class="tabs" aria-label="Main">
+      <div class="tabs-left">
+        <div class="tab active" data-tab="tracker">Tracker</div>
+        <div class="tab" data-tab="outreach">Outreach</div>
+      </div>
+    </nav>
+
+    <div class="tabs-right">
+      <div class="user-menu">
+        <button type="button" class="user-btn" id="userBtn" aria-haspopup="true" aria-expanded="false">
+          <img id="userAvatar" alt="" hidden>
+          <span class="user-label" id="userLabel">Account</span>
+          <span class="caret">▾</span>
+        </button>
+        <div class="user-dd" id="userDd" role="menu">
+          <button type="button" data-account="profile">Profile</button>
+          <button type="button" data-account="resume">Resume</button>
+          <button type="button" data-account="settings">Settings</button>
+        </div>
       </div>
     </div>
   </div>
-</div>
+</header>
 
 <!-- The active tab's markup (tabs/<name>.html) is mounted here by the router. -->
 <main id="view"></main>

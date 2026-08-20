@@ -1,5 +1,7 @@
 // JobSimp open-tracking beacon client (Cloud Run).
 // Canonical: POST /v1/api/beacon/pixel, POST /v1/api/beacon/pixels, GET .../pixel/:id.gif
+// Pure helpers (pixelHtml, extractBeaconId) are safe in content scripts.
+// Network create/list must run in the service worker (or same-origin fetch).
 
 export const BEACON_BASE = 'https://api-galzsvftoq-uc.a.run.app';
 export const BEACON_PIXEL_PATH = '/v1/api/beacon/pixel';
@@ -7,6 +9,20 @@ export const BEACON_PIXELS_PATH = '/v1/api/beacon/pixels';
 
 const PIXEL_RE = /\/v1\/api\/beacon\/pixel\/([0-9a-f-]{36}|\w[\w-]*)(?:\.gif)?/i;
 const ATTR_RE = /data-jobsimp-beacon=["']?([0-9a-f-]{36}|\w[\w-]*)/gi;
+const IMG_SRC_RE = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+const BARE_BID_RE = /^(?:https?:\/\/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[\w][\w-]*)$/i;
+
+/** Bare src="${bid}" or Gmail-proxied `…#http://<bid>`. Not a live gif URL. */
+export function beaconIdFromImgSrc(src) {
+  let raw = String(src || '').trim().replace(/&amp;/gi, '&');
+  try { raw = decodeURIComponent(raw); } catch { /* keep raw */ }
+  if (!raw) return '';
+  const fragment = raw.includes('#') ? raw.slice(raw.lastIndexOf('#') + 1) : raw;
+  const m = fragment.match(BARE_BID_RE);
+  const id = m?.[1] ? String(m[1]).trim() : '';
+  if (!id || /\./.test(id) || /^(https?)$/i.test(id)) return '';
+  return id;
+}
 
 export function pixelUrl(id) {
   const key = String(id || '').trim();
@@ -36,22 +52,23 @@ export function pixelHtml(id, { defer = false } = {}) {
 }
 
 export function extractBeaconId(html) {
-  const m = String(html || '').match(PIXEL_RE);
-  return m ? m[1] : null;
+  return extractBeaconIds(html)[0] || null;
 }
 
 export function extractBeaconIds(html) {
   const out = [];
+  const push = (id) => {
+    const key = String(id || '').trim();
+    if (key && !out.includes(key)) out.push(key);
+  };
   const text = String(html || '');
   const re = new RegExp(PIXEL_RE.source, 'gi');
   let m;
-  while ((m = re.exec(text)) !== null) {
-    if (m[1] && !out.includes(m[1])) out.push(m[1]);
-  }
+  while ((m = re.exec(text)) !== null) push(m[1]);
   ATTR_RE.lastIndex = 0;
-  while ((m = ATTR_RE.exec(text)) !== null) {
-    if (m[1] && !out.includes(m[1])) out.push(m[1]);
-  }
+  while ((m = ATTR_RE.exec(text)) !== null) push(m[1]);
+  IMG_SRC_RE.lastIndex = 0;
+  while ((m = IMG_SRC_RE.exec(text)) !== null) push(beaconIdFromImgSrc(m[1]));
   return out;
 }
 
@@ -119,17 +136,21 @@ export async function listBeacons(filter = {}) {
 }
 
 /**
- * POST /v1/api/beacon/pixel — exact { id, count: 0, meta }.
- * Returns first created doc.
+ * POST /v1/api/beacon/pixel — body must be exactly
+ * { id, count: 0, meta: { source, to, from, subject, sentAt } }.
+ * gmailMessageId is NOT accepted at create (server keysExact) — use
+ * patchBeaconMessageId after harden.
  */
 export async function createPixel(doc) {
   const metaIn = doc?.meta && typeof doc.meta === 'object' ? doc.meta : null;
   if (!metaIn) throw new Error('Beacon id and meta required');
   const from = cleanEmail(metaIn.from);
-  const to = cleanEmailList(metaIn.to);
+  const to = cleanEmailList(
+    Array.isArray(metaIn.to) ? metaIn.to : String(metaIn.to || '').split(/[,;]/),
+  );
   const body = {
     id: String(doc?.id || '').trim(),
-    count: 0,
+    count: Number.isFinite(doc?.count) ? Number(doc.count) : 0,
     meta: {
       source: String(metaIn.source || '').trim(),
       to,
@@ -147,10 +168,21 @@ export async function createPixel(doc) {
     body: JSON.stringify(body),
   });
   const data = await parseJson(res);
+  // Idempotent: already registered (e.g. durable retry) counts as success.
+  if (res.status === 409 || /already|exists|duplicate/i.test(String(data?.msg || data?.error || ''))) {
+    return Array.isArray(data?.data) ? (data.data[0] || { id: body.id, ...body }) : { id: body.id, ...body };
+  }
   if (!res.ok || data?.msg !== 'success') {
     throw new Error(envelopeError(data, `Beacon create failed (${res.status})`));
   }
   return Array.isArray(data.data) ? (data.data[0] || null) : null;
+}
+
+/** Strip JobSimp tracking pixels from an HTML fragment (avoid double-pixel on wrap). */
+export function stripBeaconPixelHtml(html) {
+  return String(html || '')
+    .replace(/<img\b[^>]*\bdata-jobsimp-beacon\b[^>]*>/gi, '')
+    .replace(/<img\b[^>]*\/v1\/api\/beacon\/pixel\/[^>]*>/gi, '');
 }
 
 /** Outreach-compatible create (same POST contract). */
@@ -174,10 +206,9 @@ export async function resetBeacon(id) {
 }
 
 /**
- * Attach the Gmail message id to an existing beacon's meta, once
- * hardenSentCopy confirms it (not known at creation time). Backend-side
- * source of truth for the id, superseding the earlier local-storage-only
- * approach — beacon.list now returns meta.gmailMessageId directly.
+ * Attach the Gmail message id to an existing beacon's meta once harden confirms
+ * it. Semantically this is the newest Sent `data-legacy-last-message-id` used
+ * for exact pill matching (wire key remains gmailMessageId).
  */
 export async function patchBeaconMessageId(id, gmailMessageId) {
   const key = String(id || '').trim();

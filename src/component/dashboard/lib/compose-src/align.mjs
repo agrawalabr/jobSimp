@@ -41,8 +41,10 @@ function paintAlignCycleBtn(btn, align) {
   btn.setAttribute('data-tip', label);
 }
 
+export { paintAlignCycleBtn };
+
 /** Wire left → center → right → justify → left on [data-align-cycle] buttons. */
-export function wireAlignCycle(toolbarEl, getEditor) {
+export function wireAlignCycle(toolbarEl, getEditor, { onFormatted } = {}) {
   if (!toolbarEl) return;
   const btns = toolbarEl.querySelectorAll('[data-align-cycle]');
   btns.forEach((btn) => {
@@ -58,8 +60,9 @@ export function wireAlignCycle(toolbarEl, getEditor) {
       const cur = editor.getFormat()?.align || '';
       const idx = ALIGN_CYCLE.indexOf(cur);
       const next = ALIGN_CYCLE[(idx < 0 ? 0 : idx + 1) % ALIGN_CYCLE.length];
-      editor.format('align', next || false);
+      editor.format('align', next || false, 'user');
       paintAlignCycleBtn(btn, next);
+      onFormatted?.(editor);
     });
   });
 

@@ -1,6 +1,6 @@
 // Pure recipient parsing / normalization. NO chrome, NO network, NO DAO imports.
 //
-// This lives in static/ (not service/gmail.js) so UI code can import it without
+// This lives in static/ (not email/gmail.js) so UI code can import it without
 // dragging oauth.js — and therefore the whole DAO + IndexedDB layer — into the
 // dashboard page bundle.
 //
@@ -124,6 +124,47 @@ export function recipientGreetingName(r) {
 /** Round-trip a recipient back into an editable token. */
 export function formatRecipientToken(r) {
   return recipientGreetingName(r) ? `${r.text}:${r.email}` : r.email;
+}
+
+/** Sent-list label: stored name wins, else display names from a To header. */
+export function recipientListLabel(raw, { storedName = '' } = {}) {
+  const stored = String(storedName || '').trim();
+  if (stored && !stored.includes('@')) return stored;
+
+  const recipients = parseRecipientList(String(raw || '').trim());
+  if (!recipients.length) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    if (s.includes('@') && !s.includes('<')) return s.split('@')[0] || s;
+    const parsed = parseRecipientToken(s);
+    if (parsed) {
+      const t = String(parsed.text || '').trim();
+      if (t && !t.includes('@')) return t;
+      return parsed.email.split('@')[0] || parsed.email;
+    }
+    return s;
+  }
+
+  return recipients.map((r) => {
+    const t = String(r.text || '').trim();
+    if (t && !t.includes('@')) return t;
+    const e = String(r.email || '').trim();
+    return e ? e.split('@')[0] || e : '';
+  }).filter(Boolean).join(', ');
+}
+
+/** First parsed recipient — for avatars and primary display. */
+export function recipientListPrimary(raw, { storedName = '' } = {}) {
+  const stored = String(storedName || '').trim();
+  const list = parseRecipientList(String(raw || '').trim());
+  if (list.length) return list[0];
+  if (stored && !stored.includes('@')) {
+    return { text: stored, email: '' };
+  }
+  const parsed = parseRecipientToken(String(raw || '').trim()) || parseRecipientToken(stored);
+  if (parsed) return parsed;
+  const s = String(raw || stored || '').trim();
+  return { text: s, email: s.includes('@') ? s : '' };
 }
 
 /** Legacy: loose string → array of bare email addresses. */

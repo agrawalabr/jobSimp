@@ -252,9 +252,9 @@ export const FIELDS = Object.freeze({
   ],
   [TYPES.ANSWER]: ['question', 'answer', 'patterns', 'type', 'useCount'],
   [TYPES.EMAIL]: [
-    'jobId', 'to', 'toName', 'subject', 'body', 'provider', 'status',
-    'gmailId', 'sentAt', 'createdAt', 'error', 'resumeId', 'attached', 'beaconId',
-    'jobsimp',
+    'jobId', 'to', 'toName', 'subject', 'body', 'snippet', 'provider', 'status',
+    'gmailId', 'threadId', 'sentAt', 'lastActivityAt', 'sentRank', 'createdAt', 'error', 'resumeId', 'attached',
+    'attachMeta', 'beaconId', 'jobsimp',
   ],
   [TYPES.SETTINGS]: [
     'provider', 'model', 'gmail', 'emailTemplate', 'onboarded', 'widgetResumeId',

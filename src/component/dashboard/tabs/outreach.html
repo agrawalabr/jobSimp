@@ -6,12 +6,20 @@
           <span class="outreach-folder">Sent</span>
           <span class="hint" id="sentCount"></span>
         </div>
-        <button type="button" class="primary" id="composeOpenBtn" data-tip="Compose new message" aria-label="Compose new message">Compose</button>
+        <div class="outreach-list-actions">
+          <button type="button" class="icon-btn" id="sentRefreshBtn" data-tip="Refresh Sent" data-tip-pos="below" aria-label="Refresh Sent">↻</button>
+          <button type="button" class="primary" id="composeOpenBtn" data-tip="Compose" data-tip-pos="below-end" aria-label="Compose">Compose</button>
+        </div>
       </div>
       <div class="outreach-list-search">
         <input id="sentSearch" name="sentSearch" type="search" placeholder="Search sent mail" autocomplete="off" aria-label="Search sent mail">
       </div>
       <div class="outreach-list-body" id="emailRows" role="listbox" aria-label="Sent messages"></div>
+      <div class="outreach-list-pager" id="sentPager" hidden>
+        <button type="button" class="icon-btn" id="sentPrevBtn" data-tip="Previous page" aria-label="Previous page">‹</button>
+        <span class="outreach-list-page" id="sentPageLabel">Page 1 / 1</span>
+        <button type="button" class="icon-btn" id="sentNextBtn" data-tip="Next page" aria-label="Next page">›</button>
+      </div>
     </aside>
 
     <section class="outreach-reader" id="reader" aria-live="polite">
@@ -21,26 +29,42 @@
       </div>
       <article class="reader-msg" id="readerMsg" hidden>
         <header class="reader-head">
-          <div class="reader-subject-row">
-            <h2 class="reader-subject" id="r_subject"></h2>
-            <div class="reader-track" id="r_track"></div>
-          </div>
-          <div class="reader-meta">
-            <div class="reader-meta-line"><span class="muted">To</span> <span id="r_to"></span></div>
-            <div class="reader-meta-line"><span class="muted">Date</span> <span id="r_date"></span></div>
-            <div class="reader-meta-line" id="r_job_row" hidden><span class="muted">Job</span> <span id="r_job"></span></div>
-            <div class="reader-meta-line" id="r_status_row"><span class="muted">Status</span> <span id="r_status"></span></div>
+          <div class="reader-head-main">
+            <div class="reader-head-copy">
+              <h2 class="reader-subject" id="r_subject"></h2>
+              <div class="reader-job" id="r_job_row" hidden>
+                <span class="reader-job-label">Job</span>
+                <span class="reader-job-value" id="r_job"></span>
+              </div>
+            </div>
+            <div class="reader-head-aside">
+              <div class="reader-track" id="r_track"></div>
+              <div class="reader-actions" id="r_actions">
+                <button type="button" class="icon-btn reader-icon-btn" id="r_replyBtn" data-tip="Reply" data-tip-pos="below" aria-label="Reply">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg>
+                </button>
+                <button type="button" class="icon-btn reader-icon-btn" id="r_forwardBtn" data-tip="Forward" data-tip-pos="below" aria-label="Forward">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="scale(-1,1) translate(-24,0)"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></g></svg>
+                </button>
+                <button type="button" class="icon-btn reader-icon-btn reader-icon-btn-danger" id="r_trashBtn" data-tip="Move to Trash" data-tip-pos="below" aria-label="Move to Trash">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
         </header>
-        <div class="reader-body" id="r_body"></div>
-        <p class="hint reader-body-hint" id="r_body_hint" hidden></p>
+        <div class="reader-scroll">
+          <div class="reader-body" id="r_body"></div>
+          <p class="hint reader-body-hint" id="r_body_hint" hidden></p>
+        </div>
       </article>
     </section>
   </div>
 
-  <div class="compose-card" id="composeCard" hidden>
-    <div class="compose-card-head">
-      <span class="compose-card-title">New message</span>
+  <div class="compose-card" id="composeCard" hidden data-slot="0" data-compose-mode="new">
+    <div class="compose-card-head" id="composeCardHead">
+      <span class="compose-card-title" id="composeCardTitle">New message</span>
+      <div class="compose-status" id="sendres" hidden aria-live="polite"></div>
       <div class="compose-card-actions">
         <button type="button" class="icon-btn compose-min" id="composeMinBtn" data-tip="Minimize" aria-label="Minimize">─</button>
         <button type="button" class="icon-btn compose-close" id="composeCloseBtn" data-tip="Close" aria-label="Close">×</button>
@@ -69,7 +93,6 @@
       </div>
       <span class="hint compose-inline-hint" id="c_to_hint"></span>
       <button type="button" id="c_to_add" hidden aria-hidden="true">Add</button>
-      <div class="hint" id="c_sendMode" hidden></div>
 
       <div class="compose-line">
         <span class="compose-line-label">Subject</span>
@@ -87,6 +110,10 @@
             <div class="skel-pulse">Writing with AI…</div>
           </div>
           <div id="c_body" class="compose-quill" aria-label="Message body"></div>
+          <details class="compose-quote" id="composeQuote" hidden>
+            <summary class="compose-quote-btn" aria-label="Show previous messages">⋯</summary>
+            <div class="compose-quote-body html-body" id="composeQuoteBody"></div>
+          </details>
           <div class="attach-chips" id="attachChips" hidden></div>
         </div>
 
@@ -114,7 +141,7 @@
         <div class="compose-format" id="formatMenu" hidden>
           <div class="compose-format-inner">
             <div id="quillToolbar" class="js-quill-toolbar" role="toolbar" aria-label="Text formatting"></div>
-            <button type="button" class="compose-format-close" id="formatCloseBtn" data-tip="Close" aria-label="Close formatting">×</button>
+            <button type="button" class="compose-format-close" id="formatCloseBtn" data-tip="Close formatting" data-tip-pos="end" aria-label="Close formatting">×</button>
           </div>
         </div>
       </div>
@@ -122,7 +149,7 @@
       <div class="compose-dock">
         <div class="compose-toolbar">
           <div class="compose-toolbar-left">
-            <button type="button" class="compose-send" id="sendBtn" data-tip="Send" aria-label="Send" disabled>Send</button>
+            <button type="button" class="compose-send" id="sendBtn" aria-label="Send" disabled>Send</button>
 
             <div class="tb-pill" role="toolbar" aria-label="Compose tools">
               <div class="tb-menu-wrap">
@@ -156,7 +183,7 @@
                 <div class="tb-emoji-picker" id="emojiMenu" hidden>
                   <div class="tb-emoji-head">
                     <span class="tb-emoji-title">Emoji</span>
-                    <button type="button" class="tb-emoji-close" id="emojiCloseBtn" data-tip="Close" aria-label="Close emoji picker">×</button>
+                    <button type="button" class="tb-emoji-close" id="emojiCloseBtn" data-tip="Close" data-tip-pos="below" aria-label="Close emoji picker">×</button>
                   </div>
                   <div id="emojiPickerHost"></div>
                 </div>
@@ -175,21 +202,90 @@
             </div>
           </div>
           <button type="button" class="tb-icon tb-discard" id="composeDiscardBtn" data-tip="Discard draft" data-tip-pos="end" aria-label="Discard draft">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h14M10 11v6M14 11v6M9 7l1-2h4l1 2M8 7l1 12h6l1-12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
           </button>
         </div>
-        <div class="sendres" id="sendres"></div>
       </div>
     </div>
   </div>
 
+  <div class="compose-tabs" id="composeTabs" hidden role="tablist" aria-label="Minimized drafts"></div>
+
   <div class="modal doc-viewer" id="docViewer" role="dialog" aria-modal="true" aria-labelledby="docViewerTitle">
-    <div class="doc-viewer-card">
-      <div class="doc-viewer-head">
-        <span class="doc-viewer-title" id="docViewerTitle">Document</span>
-        <button type="button" class="icon-btn" id="docViewerClose" data-tip="Close" aria-label="Close preview">×</button>
+    <div class="doc-viewer-shell">
+      <header class="doc-viewer-bar">
+        <div class="doc-viewer-bar-left">
+          <button type="button" class="doc-viewer-icon-btn" id="docViewerClose" data-tip="Close" aria-label="Close preview">×</button>
+          <span class="doc-viewer-file-icon" id="docViewerFileIcon" aria-hidden="true">PDF</span>
+          <span class="doc-viewer-title" id="docViewerTitle">Document</span>
+        </div>
+        <div class="doc-viewer-bar-center">
+          <div class="doc-viewer-openwith" id="docViewerOpenWithWrap">
+            <div class="doc-viewer-openwith-btn" role="group" aria-label="Open with">
+              <button type="button" class="doc-viewer-openwith-main" id="docViewerOpenWith">
+                <svg class="doc-viewer-docs-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#fff" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" opacity=".92"/>
+                  <path fill="#E8F0FE" d="M14 2v6h6"/>
+                  <path fill="#1A73E8" d="M8 13h8v1.6H8zm0 3.2h8V18H8zm0-6.4h5V11H8z"/>
+                </svg>
+                <span>Open with Google Docs</span>
+              </button>
+              <button type="button" class="doc-viewer-openwith-caret" id="docViewerOpenWithCaret" aria-label="More open-with options" aria-haspopup="true" aria-expanded="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <div class="doc-viewer-openwith-menu" id="docViewerOpenWithMenu" hidden role="menu">
+              <div class="doc-viewer-menu-label">Connected apps</div>
+              <button type="button" class="doc-viewer-menu-item" role="menuitem" data-open-app="docs">
+                <span class="doc-viewer-menu-ico docs" aria-hidden="true"></span>
+                Google Docs
+              </button>
+              <div class="doc-viewer-menu-label">Suggested third-party apps</div>
+              <a class="doc-viewer-menu-item" role="menuitem" data-open-app="lumin" href="https://www.luminpdf.com/" target="_blank" rel="noopener noreferrer">
+                <span class="doc-viewer-menu-ico lumin" aria-hidden="true"></span>
+                Lumin PDF - Edit or Sign Documents
+              </a>
+              <a class="doc-viewer-menu-item" role="menuitem" data-open-app="dochub" href="https://dochub.com/" target="_blank" rel="noopener noreferrer">
+                <span class="doc-viewer-menu-ico dochub" aria-hidden="true"></span>
+                DocHub - PDF Sign and Edit
+              </a>
+              <a class="doc-viewer-menu-item" role="menuitem" href="https://workspace.google.com/marketplace" target="_blank" rel="noopener noreferrer">
+                + Connect more apps
+              </a>
+              <p class="doc-viewer-menu-foot">Opening this item will open it in a new tab</p>
+            </div>
+          </div>
+        </div>
+        <div class="doc-viewer-bar-right">
+          <a class="doc-viewer-icon-btn" id="docViewerDrive" href="https://drive.google.com/drive/my-drive" target="_blank" rel="noopener noreferrer" data-tip="Add to Drive" aria-label="Add to Drive">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7.5 13H4.5L12 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10v5m0 0l-2.2-2.2M12 15l2.2-2.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <button type="button" class="doc-viewer-icon-btn" id="docViewerPrint" data-tip="Print" aria-label="Print" hidden>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 9V4h10v5M7 15H5a2 2 0 01-2-2v-2a2 2 0 012-2h14a2 2 0 012 2v2a2 2 0 01-2 2h-2M7 13h10v7H7v-7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </button>
+          <a class="doc-viewer-icon-btn" id="docViewerDownload" download hidden data-tip="Download" aria-label="Download">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v10.5m0 0L8.5 11M12 14.5L15.5 11M5 19h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <div class="doc-viewer-more-wrap">
+            <button type="button" class="doc-viewer-icon-btn" id="docViewerMore" data-tip="More actions" aria-label="More actions" aria-haspopup="true" aria-expanded="false" hidden>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
+            </button>
+            <div class="doc-viewer-more-menu" id="docViewerMoreMenu" hidden role="menu">
+              <button type="button" class="doc-viewer-menu-item" role="menuitem" id="docViewerOpenTab">Open in new tab</button>
+              <button type="button" class="doc-viewer-menu-item" role="menuitem" id="docViewerCopyName">Copy file name</button>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div class="doc-viewer-stage" id="docViewerBody"></div>
+      <div class="doc-viewer-float" id="docViewerFloat" hidden>
+        <span class="doc-viewer-page" id="docViewerPage">Page 1 / 1</span>
+        <button type="button" class="doc-viewer-icon-btn" id="docViewerZoomOut" data-tip="Zoom out" aria-label="Zoom out">−</button>
+        <button type="button" class="doc-viewer-icon-btn" id="docViewerZoomIn" data-tip="Zoom in" aria-label="Zoom in">+</button>
+        <button type="button" class="doc-viewer-icon-btn" id="docViewerFit" data-tip="Fit to width" aria-label="Fit to width">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
-      <div class="doc-viewer-body" id="docViewerBody"></div>
     </div>
   </div>
 
@@ -197,7 +293,7 @@
     <div class="modal-card sig-manager-card">
       <div class="doc-viewer-head">
         <span class="doc-viewer-title" id="sigManagerTitle">Manage signatures</span>
-        <button type="button" class="icon-btn" id="sigManagerClose" data-tip="Close" aria-label="Close">×</button>
+        <button type="button" class="icon-btn" id="sigManagerClose" data-tip="Close" data-tip-pos="below" aria-label="Close">×</button>
       </div>
       <div class="sig-manager-body">
         <aside class="sig-manager-list-wrap">
@@ -210,7 +306,7 @@
             <p class="hint">Click <strong>+ Add signature</strong> to create your first one.</p>
           </div>
           <div class="sig-manager-fields" id="sigManagerFields">
-            <div class="field"><label for="sigEditTitle">Title / alias</label><input id="sigEditTitle" placeholder="e.g. Professional" autocomplete="off"></div>
+            <div class="field"><label for="sigEditTitle">Title / alias</label><input id="sigEditTitle" name="sigEditTitle" placeholder="e.g. Professional" autocomplete="off"></div>
             <div class="field sig-body-field">
               <span class="field-label" id="sigBodyLabel">Signature</span>
               <div class="sig-editor">
@@ -218,11 +314,13 @@
                 <div id="sigEditBody" class="sig-quill" role="textbox" aria-multiline="true" aria-labelledby="sigBodyLabel"></div>
               </div>
             </div>
-            <div class="actions">
-              <button type="button" id="sigDeleteBtn">Delete</button>
-              <span class="hint" id="sigSaveMsg"></span>
-              <button type="button" class="primary" id="sigSaveBtn">Save</button>
-            </div>
+          </div>
+          <div class="actions" id="sigManagerActions">
+            <button type="button" class="icon-btn reader-icon-btn reader-icon-btn-danger" id="sigDeleteBtn" data-tip="Delete signature" data-tip-pos="right" aria-label="Delete signature">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+            <span id="sigSaveMsg" class="sig-save-badge" hidden role="status"></span>
+            <button type="button" class="primary" id="sigSaveBtn">Save</button>
           </div>
         </div>
       </div>

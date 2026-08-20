@@ -10,28 +10,35 @@
 // dashboard costs one small fetch instead of parsing every panel up front.
 
 import { MAIN_TABS, ACCOUNT_TABS, DEFAULT_TAB } from '../../static/enums.js';
-import { $, $$, send } from './lib/dom.js';
+import { $, $$, send, esc } from './lib/dom.js';
 
 const ALL_TABS = new Set([...MAIN_TABS, ...ACCOUNT_TABS]);
 const htmlCache = new Map();
 const moduleCache = new Map();
+/** Bump with extension version so tab ES modules are not stuck on a stale import after Reload. */
+const TAB_CACHE_BUST = `${chrome.runtime.getManifest().version}-list-activity-sort-v1`;
 
 let currentTab = null;
 let currentModule = null;
 let mountToken = 0;
 
 async function loadHtml(tab) {
-  if (!htmlCache.has(tab)) {
-    const res = await fetch(chrome.runtime.getURL(`src/component/dashboard/tabs/${tab}.html`));
+  const key = `${tab}@${TAB_CACHE_BUST}`;
+  if (!htmlCache.has(key)) {
+    const url = chrome.runtime.getURL(`src/component/dashboard/tabs/${tab}.html`);
+    const res = await fetch(`${url}?v=${encodeURIComponent(TAB_CACHE_BUST)}`, { cache: 'reload' });
     if (!res.ok) throw new Error(`could not load ${tab}.html (${res.status})`);
-    htmlCache.set(tab, await res.text());
+    htmlCache.set(key, await res.text());
   }
-  return htmlCache.get(tab);
+  return htmlCache.get(key);
 }
 
 async function loadModule(tab) {
-  if (!moduleCache.has(tab)) moduleCache.set(tab, await import(`./tabs/${tab}.js`));
-  return moduleCache.get(tab);
+  const key = `${tab}@${TAB_CACHE_BUST}`;
+  if (!moduleCache.has(key)) {
+    moduleCache.set(key, await import(`./tabs/${tab}.js?v=${encodeURIComponent(TAB_CACHE_BUST)}`));
+  }
+  return moduleCache.get(key);
 }
 
 function syncChrome(tab) {
@@ -64,21 +71,31 @@ export async function activateTab(tab, params = {}) {
 
   syncChrome(next);
   const token = ++mountToken;
+  let step = 'start';
 
   try {
-    const [html, mod] = await Promise.all([loadHtml(next), loadModule(next)]);
+    step = 'html';
+    const html = await loadHtml(next);
+    step = 'module';
+    const mod = await loadModule(next);
     if (token !== mountToken) return;
 
     try { currentModule?.unmount?.(); } catch (e) { console.warn(`${currentTab} unmount failed`, e); }
 
+    step = 'paint';
     view.innerHTML = html;
     currentTab = next;
     currentModule = mod;
+    step = 'mount';
     await mod.mount(view, params);
   } catch (e) {
     if (token !== mountToken) return;
+    const msg = String(e?.message || e || '');
+    const stale = /Failed to fetch|Extension context invalidated/i.test(msg);
     console.error(`Failed to open "${next}"`, e);
-    view.innerHTML = `<div class="view-error">Could not open ${next}: ${e.message}</div>`;
+    view.innerHTML = stale
+      ? `<div class="view-error">JobSimp was reloaded. Close this tab and open the dashboard again from the extension.</div>`
+      : `<div class="view-error">Could not open ${next} (${step}): ${esc(msg)}</div>`;
   }
 }
 
@@ -133,4 +150,8 @@ async function loadUserButton() {
 
 initNav();
 loadUserButton();
-activateTab(new URLSearchParams(location.search).get('tab') || DEFAULT_TAB);
+const bootParams = new URLSearchParams(location.search);
+const bootMount = {};
+if (bootParams.get('jobId')) bootMount.jobId = bootParams.get('jobId');
+if (bootParams.get('resumeId')) bootMount.resumeId = bootParams.get('resumeId');
+activateTab(bootParams.get('tab') || DEFAULT_TAB, bootMount);

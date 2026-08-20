@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JobSimp — Job Application Copilot",
-  "version": "0.1.10",
+  "version": "0.1.16",
   "description": "Google-login job copilot: track applications, AI-parsed multi-resume autofill, JD match scoring, AI outreach emails via Gmail.",
   "permissions": ["storage", "alarms", "identity", "activeTab", "scripting", "tabs", "webNavigation"],
   "host_permissions": [
@@ -67,6 +67,8 @@
     "https://*.jobs.personio.com/*",
     "https://*.deloitte.com/*",
     "https://apply.deloitte.com/*",
+    "https://jobs.gem.com/*",
+    "https://*.gem.com/*",
 
     "https://*.linkedin.com/jobs/*",
     "https://*.linkedin.com/jobs/view/*",
@@ -145,6 +147,8 @@
         "https://*.pinpointhq.com/*",
         "https://*.jobs.personio.de/*",
         "https://*.jobs.personio.com/*",
+        "https://jobs.gem.com/*",
+        "https://*.gem.com/*",
 
         "https://*.linkedin.com/jobs/*",
         "https://*.linkedin.com/jobs/view/*",
@@ -194,10 +198,9 @@
         "src/component/onboarding/onboarding.html",
         "src/component/widget/*",
         "src/component/mail-track/*",
-        "src/service/scraper.js",
-        "src/service/autofill.js",
-        "src/service/beacon.js",
-        "src/static/jobUrl.js"
+        "src/service/*",
+        "src/static/*",
+        "src/email/beacon.js"
       ],
       "matches": ["<all_urls>"]
     }

@@ -33,6 +33,9 @@ export {
   syncQuillMinHeight,
   wireAlignCycle,
   assembleComposeToolbar,
+  setActiveComposeQuill,
+  getComposeQuillFor,
+  destroyComposeEditor,
 } from './editor.mjs';
 
 export {

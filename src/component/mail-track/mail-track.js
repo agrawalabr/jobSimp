@@ -6,10 +6,10 @@
  *
  * MAIL_TRACK_BUILD: bump when fixing content-script lifecycle (verify in Gmail console).
  */
-const MAIL_TRACK_BUILD = '0.1.22';
+const MAIL_TRACK_BUILD = '0.1.38';
 /** When true: console mapping diagnostics + mirror beacon.list into
  * chrome.storage.local `{ beacons: [...] }` (visible in extension DevTools). */
-const debug = true;
+const debug = false;
 try { console.info('[JobSimp] mail-track', MAIL_TRACK_BUILD, 'debug=', debug); } catch { /* ignore */ }
 
 const SOURCE_GMAIL = 'gmail/google';
@@ -17,7 +17,7 @@ const STAR_TD = 'td.apU.xY';
 const HOST_ATTR = 'data-jobsimp-track-host';
 const TD_CLASS = 'jobsimp-track-td';
 const OPEN_CLASS = 'jobsimp-track-open';
-const OPEN_TD_CLASS = 'jobsimp-track-open-td';
+const SUMMARY_CLASS = 'jobsimp-track-summary';
 const TRACK_BTN = 'jobsimp-compose-track';
 const COMPOSE_ATTR = 'data-jobsimp-tracked';
 const BTN_ATTR = 'data-jobsimp-compose-track';
@@ -32,41 +32,35 @@ const BTN_ATTR = 'data-jobsimp-compose-track';
  * Messaging at document_start races extension reload and caused uncaught
  * "Extension context invalidated" on hashchange from zombie scripts.
  */
-(function earlyGmailSentPixelGate() {
-  // #region agent log
-  fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'G',location:'mail-track.js:1-file-loaded',message:'content script file executed at document_start',data:{url:String(location.href).slice(0,120),readyState:document.readyState,build:MAIL_TRACK_BUILD},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-})();
+
 
 (async () => {
-  // #region agent log
-  fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'pre-fix',hypothesisId:'A',location:'mail-track.js:boot',message:'mail-track IIFE entered',data:{isTop:window.top===window,hasRuntimeId:!!chrome.runtime?.id,hash:String(location.hash||'').slice(0,80)},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-  if (window.top !== window) return;
-  if (!chrome.runtime?.id) return;
-  if (window.__jobsimpMailTrack === chrome.runtime.id) return;
-  window.__jobsimpMailTrack = chrome.runtime.id;
+  if (window.top !== window) {
+    return;
+  }
+  if (!chrome.runtime?.id) {
+    return;
+  }
+  // Only skip if a prior run fully started (flag set at end). A failed import
+  // must not permanently block remount on the same page.
+  if (window.__jobsimpMailTrack === chrome.runtime.id) {
+    return;
+  }
 
-  const beaconUrl = chrome.runtime.getURL('src/service/beacon.js');
+  const beaconUrl = chrome.runtime.getURL('src/email/beacon.js');
   let beaconMod;
   try {
     beaconMod = await import(beaconUrl);
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'pre-fix',hypothesisId:'F',location:'mail-track.js:import-ok',message:'dynamic import of beacon.js succeeded',data:{url:beaconUrl,exports:Object.keys(beaconMod||{}).slice(0,12)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   } catch (impErr) {
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'pre-fix',hypothesisId:'F',location:'mail-track.js:import-fail',message:'dynamic import of beacon.js FAILED',data:{url:beaconUrl,error:String(impErr&&impErr.message||impErr),name:String(impErr&&impErr.name||'')},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     throw impErr;
   }
 
   const {
     pixelHtml,
+    extractBeaconIds,
     badgeStateFromTrack,
     formatBeaconSentAt,
     cleanEmail,
-    extractBeaconIds,
     BEACON_BASE,
   } = beaconMod;
 
@@ -76,6 +70,7 @@ let prevHash = String(location.hash || '');
 let stylesReady = null;
 let pillTpl = null;
 let composeTpl = null;
+let summaryTpl = null;
 
 function extAlive() {
   try {
@@ -123,9 +118,6 @@ function syncDebugSentEmails(emails) {
   try {
     const sentEmails = (emails || []).map((e) => ({
       gmailMessageId: e.gmailMessageId || null,
-      subject: e.subject || '',
-      to: e.to || [],
-      sentAt: e.sentAt || '',
     }));
     chrome.storage.local.set({ sentEmails }, () => {
       if (chrome.runtime.lastError) {
@@ -205,25 +197,50 @@ function bucket(from) {
   return caches.get(key);
 }
 
-/** Gmail's own native message id for a Sent-list row, if present. Prefers
- * the last-non-draft id, since a thread's newest reply may be an unsent
- * draft while this row still represents the last actually-sent message. */
-function rowGmailMessageId(row) {
-  const el = row.querySelector('[data-legacy-last-non-draft-message-id], [data-legacy-last-message-id]');
-  return el?.getAttribute('data-legacy-last-non-draft-message-id')
-    || el?.getAttribute('data-legacy-last-message-id')
-    || null;
+function legacyAttr(el, name) {
+  const v = el?.getAttribute?.(name);
+  return v && String(v).trim() ? String(v).trim() : '';
 }
 
-function mergeDoc(from, doc) {
-  if (!doc?.id) return;
-  const b = bucket(from);
-  const i = b.docs.findIndex((d) => d.id === doc.id);
-  if (i >= 0) b.docs[i] = doc;
-  else b.docs.push(doc);
-  // A successful create means this from-bucket is populated even if list never ran.
-  b.fetched = true;
-  syncDebugBeacons(b.docs);
+function firstWithAttr(root, name) {
+  const sel = `[${name}]`;
+  if (root.matches?.(sel)) return root;
+  return root.querySelector?.(sel) || null;
+}
+
+/** Canonical tracker key: last-non-draft first, else last-message. Never name/to/time. */
+function canonicalLegacyLastMessageId(root) {
+  if (!root) return null;
+  const nd = legacyAttr(
+    firstWithAttr(root, 'data-legacy-last-non-draft-message-id'),
+    'data-legacy-last-non-draft-message-id',
+  );
+  if (nd) return nd;
+  const lm = legacyAttr(
+    firstWithAttr(root, 'data-legacy-last-message-id'),
+    'data-legacy-last-message-id',
+  );
+  return lm || null;
+}
+
+/**
+ * Body fallback: latest Sent pixel src="${bid}" (or Gmail-proxied #http://<bid>).
+ * Used only when legacy last-message attrs do not match a beacon.
+ */
+function scrapeLatestSentBeaconId(root) {
+  if (!root || typeof extractBeaconIds !== 'function') return '';
+  const scope = root.querySelector?.('div[role="main"]') || root;
+  const nodes = [
+    ...scope.querySelectorAll?.(
+      '[data-message-id], div.adn, div.gs, div.a3s, div[data-legacy-message-id]',
+    ) || [],
+  ];
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const ids = extractBeaconIds(nodes[i].innerHTML || '');
+    if (ids.length) return String(ids[ids.length - 1] || '').trim();
+  }
+  const ids = extractBeaconIds(scope.innerHTML || '');
+  return ids.length ? String(ids[ids.length - 1] || '').trim() : '';
 }
 
 // ---------- URL helpers ----------
@@ -249,6 +266,10 @@ function isSentOpen() {
   const h = hash();
   if (isSentListPageHash(h)) return false;
   return /#sent\/.+/i.test(h) || /#label\/sent\/.+/i.test(h);
+}
+
+function hasOpenConversation() {
+  return !!document.querySelector('div[role="main"] h2.hP, div[role="main"] td.c2 h3.iw');
 }
 
 function isSentAny() {
@@ -281,25 +302,6 @@ function shouldGatePixelGif() {
   if (/compose/i.test(href) || /compose/i.test(h) || hasCompose()) return true;
   if (/#draft\b/i.test(h) || /#label\/draft/i.test(h)) return true;
   return isSentAny();
-}
-
-/** Observe whether a beacon .gif still reaches the network from this page. */
-function watchPixelLoads() {
-  if (window.__jobsimpPixelWatch) return;
-  window.__jobsimpPixelWatch = true;
-  const note = (phase, img) => {
-    const src = String(img?.src || img?.getAttribute?.('src') || '');
-    if (!/api-galzsvftoq|\/v1\/api\/beacon\/pixel\//i.test(src)) return;
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H6',location:'mail-track.js:watchPixelLoads',message:'beacon pixel network event',data:{phase,src:src.slice(0,160),hash:String(location.hash||'').slice(0,80),gateWanted:shouldGatePixelGif()},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  };
-  document.addEventListener('load', (e) => {
-    if (e.target?.tagName === 'IMG') note('load', e.target);
-  }, true);
-  document.addEventListener('error', (e) => {
-    if (e.target?.tagName === 'IMG') note('error', e.target);
-  }, true);
 }
 
 // ---------- scrape ----------
@@ -409,6 +411,21 @@ function idInUse(from, id) {
   return false;
 }
 
+async function resolveBeaconIdByLastMessageId() {
+  const main = document.querySelector('div[role="main"]') || document;
+  const mid = String(canonicalLegacyLastMessageId(main) || '').trim();
+  const docs = await ensureSentDocs(false);
+  if (mid) {
+    const hit = (docs || []).find((d) => String(d?.meta?.gmailMessageId || '').trim() === mid);
+    if (hit?.id) return hit.id;
+  }
+  // Attr missing (or no meta match): join via latest Sent body beacon id only.
+  const bid = scrapeLatestSentBeaconId(main);
+  if (!bid) return '';
+  const byBody = (docs || []).find((d) => d?.id === bid);
+  return byBody?.id || bid;
+}
+
 async function ensureDraft(root) {
   const from = accountFrom();
   if (!from) return null;
@@ -426,11 +443,16 @@ async function ensureDraft(root) {
     d.meta.source = SOURCE_GMAIL;
     return d;
   }
+  // Reply-in-thread: reuse beacon when open conv last-message-id === meta.gmailMessageId.
+  const reusedId = await resolveBeaconIdByLastMessageId();
+  let id = reusedId;
   let composeDt = new Date().toISOString();
-  let id = await uuidFromSha256(`${from.split('@')[0]}-${SOURCE_GMAIL}-${composeDt}`);
-  if (idInUse(from, id)) {
-    composeDt = new Date().toISOString();
+  if (!id) {
     id = await uuidFromSha256(`${from.split('@')[0]}-${SOURCE_GMAIL}-${composeDt}`);
+    if (idInUse(from, id)) {
+      composeDt = new Date().toISOString();
+      id = await uuidFromSha256(`${from.split('@')[0]}-${SOURCE_GMAIL}-${composeDt}`);
+    }
   }
   d = {
     id,
@@ -444,6 +466,7 @@ async function ensureDraft(root) {
     },
     composeDt,
     composeKeyId,
+    reusedBeacon: !!reusedId,
     tracked: root.getAttribute(COMPOSE_ATTR) !== '0',
   };
   drafts.set(key, d);
@@ -485,6 +508,7 @@ async function ensureStyles() {
     }
     pillTpl = doc.querySelector('#jobsimp-pill-tpl');
     composeTpl = doc.querySelector('#jobsimp-compose-track-tpl');
+    summaryTpl = doc.querySelector('#jobsimp-summary-tpl');
   })();
   return stylesReady;
 }
@@ -502,13 +526,141 @@ function paintPill(host, payload) {
   pill.textContent = label;
 }
 
-/** Exact match only: beacon.meta.gmailMessageId → scraped row map entry. */
-function lookupScrapedByBeacon(byId, doc) {
+function pixelSummaryStats(docs) {
+  let opened = 0;
+  let waiting = 0;
+  let hits = 0;
+  for (const d of docs || []) {
+    const c = Number(d?.count) || 0;
+    hits += c;
+    if (c > 0) opened += 1;
+    else waiting += 1;
+  }
+  return { total: (docs || []).length, opened, waiting, hits };
+}
+
+function isVisibleBox(el) {
+  if (!el || !el.isConnected) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 40 && r.height > 8;
+}
+
+function sentFilterChipRow() {
+  const cands = [...new Set([
+    ...document.querySelectorAll('div[role="main"] div.a5E[jsname="ubaLBe"]'),
+    ...document.querySelectorAll('div.Ii[data-query="in:sent"] div.a5E'),
+    ...document.querySelectorAll('div.Ii div.a5E[jsname="ubaLBe"]'),
+  ])];
+  return cands.find(isVisibleBox) || cands[0] || null;
+}
+
+function removePixelSummary() {
+  for (const el of document.querySelectorAll(`.${SUMMARY_CLASS}`)) el.remove();
+}
+
+function mountPixelSummary() {
+  const row = sentFilterChipRow();
+  if (!row) return null;
+  let host = row.querySelector(`.${SUMMARY_CLASS}`);
+  const stray = [...document.querySelectorAll(`.${SUMMARY_CLASS}`)].filter((el) => el !== host);
+  for (const el of stray) el.remove();
+  if (host && (!host.isConnected || host.parentElement !== row || !isVisibleBox(row))) {
+    host.remove();
+    host = null;
+  }
+  if (!host) {
+    host = summaryTpl
+      ? summaryTpl.content.firstElementChild.cloneNode(true)
+      : Object.assign(document.createElement('div'), { className: SUMMARY_CLASS });
+    host.className = SUMMARY_CLASS;
+    row.appendChild(host);
+  } else if (row.lastElementChild !== host) {
+    row.appendChild(host);
+  }
+  return host;
+}
+
+function styleSummaryLikeChip(host) {
+  const chip = host?.parentElement?.querySelector('.HW');
+  if (!chip) return;
+  const s = getComputedStyle(chip);
+  host.style.setProperty('--jobsimp-chip-fg', s.color);
+}
+
+function paintPixelSummary(docs) {
+  if (!isSentAny()) {
+    removePixelSummary();
+    return;
+  }
+  const host = mountPixelSummary();
+  if (!host) return;
+  styleSummaryLikeChip(host);
+  const s = pixelSummaryStats(docs);
+  const key = `${s.total}:${s.opened}:${s.waiting}:${s.hits}`;
+  if (host.dataset.jobsimpSum !== key) {
+    host.dataset.jobsimpSum = key;
+
+    const body = host.querySelector('.jobsimp-track-summary-body') || host;
+    host.classList.toggle('is-empty', s.total === 0);
+    if (s.total === 0) {
+      host.setAttribute('aria-label', 'JobSimp: no tracked mail');
+      host.title = 'No tracked mail yet';
+      body.replaceChildren(document.createTextNode('No tracked mail'));
+    } else {
+      const label = s.hits > s.opened
+        ? `JobSimp: ${s.opened} opened (${s.hits}×), ${s.waiting} not opened, ${s.total} tracked`
+        : `JobSimp: ${s.opened} opened, ${s.waiting} not opened, ${s.total} tracked`;
+      host.setAttribute('aria-label', label);
+      host.title = label;
+
+      const stat = (cls, n, text) => {
+        const el = document.createElement('span');
+        el.className = `jobsimp-track-stat ${cls}`;
+        const b = document.createElement('b');
+        b.textContent = String(n);
+        el.append(b, document.createTextNode(` ${text}`));
+        return el;
+      };
+      const dot = () => {
+        const el = document.createElement('span');
+        el.className = 'jobsimp-track-summary-dot';
+        el.setAttribute('aria-hidden', 'true');
+        return el;
+      };
+      body.replaceChildren(
+        stat('opened', s.opened, 'opened'),
+        dot(),
+        stat('waiting', s.waiting, 'not opened'),
+        dot(),
+        stat('total', s.total, 'tracked'),
+      );
+    }
+  }
+}
+
+function scheduleEnsureOutreach(gmailId, beaconId) {
+  // Disabled: outreach restores rows via metadata sync + thread page prefetch.
+  // Calling ensureFromGmailMessage here caused full+raw storms from Gmail Sent.
+  void gmailId;
+  void beaconId;
+}
+
+/**
+ * Preferred: beacon.meta.gmailMessageId === scraped last-non-draft / last-message id.
+ * Fallback: scraped pixel src="${bid}" === doc.id. Never name/to/time.
+ */
+function lookupScrapedByBeacon(byId, byBeaconId, doc) {
   const mid = String(doc?.meta?.gmailMessageId || '').trim();
+  if (mid) {
+    const email = byId.get(mid) || null;
+    if (email) return { email, mid, reason: 'exact-match' };
+  }
+  const bid = String(doc?.id || '').trim();
+  if (bid && byBeaconId?.has(bid)) {
+    return { email: byBeaconId.get(bid), mid: mid || '', reason: 'beacon-id-fallback' };
+  }
   if (!mid) return { email: null, mid: '', reason: 'beacon-has-no-gmailMessageId' };
-  const email = byId.get(mid) || null;
-  if (!email) return { email: null, mid, reason: 'no-row-on-page' };
-  return { email, mid, reason: 'exact-match' };
+  return { email: null, mid, reason: 'no-row-on-page' };
 }
 
 // ---------- pixel helpers ----------
@@ -526,10 +678,6 @@ function injectPixel(body, id, { defer = false } = {}) {
   const snippet = pixelHtml(id, { defer });
   html += snippet;
   body.innerHTML = html;
-  // #region agent log
-  const last = [...body.querySelectorAll('img')].pop();
-  fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'H3',location:'mail-track.js:injectPixel',message:'pixel injected into compose',data:{id,defer:!!defer,hash:String(location.hash||'').slice(0,80),snippet:String(snippet).slice(0,220),domSrc:String(last?.getAttribute('src')||'').slice(0,160),domBeacon:last?.getAttribute('data-jobsimp-beacon')||null,domBeaconSrc:last?.getAttribute('data-jobsimp-beacon-src')||null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 }
 
 function removePixel(body) {
@@ -541,9 +689,6 @@ function removePixel(body) {
 
 async function ensureSentDocs(force) {
   const from = accountFrom();
-  // #region agent log
-  fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'B',location:'mail-track.js:ensureSentDocs',message:'ensureSentDocs entry',data:{from:from||null,force:!!force,alreadyFetched:from?!!bucket(from).fetched:false,cacheSize:from?bucket(from).docs.length:0},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (!from) {
     dbg('ensureSentDocs skip: accountFrom() empty — beacon.list not called');
     return [];
@@ -575,15 +720,9 @@ async function ensureSentDocs(force) {
       })),
     });
     syncDebugBeacons(b.docs);
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'D',location:'mail-track.js:ensureSentDocs:ok',message:'beacon.list ok',data:{from,docCount:b.docs.length,sampleSubjects:b.docs.slice(0,3).map((d)=>(d.meta&&d.meta.subject)||null)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   } catch (e) {
     console.warn('[JobSimp] beacon.list failed', e);
     dbg('ensureSentDocs threw', String(e && e.message || e));
-    // #region agent log
-    fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'post-fix',hypothesisId:'D',location:'mail-track.js:ensureSentDocs:err',message:'beacon.list failed',data:{from,error:String(e&&e.message||e)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     // Keep fetched=false so remount can retry once account/SW is ready.
   }
   return b.docs;
@@ -620,34 +759,24 @@ function mountBadge(row) {
   return td;
 }
 
-/** Scrape visible Sent-list rows → meta keyed by legacy message id. */
+/** Scrape visible Sent-list rows. Legacy id preferred; pixel src is fallback key. */
 function scrapePageEmails() {
   const list = [];
-  const byId = new Map(); // gmailMessageId → scraped meta (+ row)
+  const byId = new Map(); // legacyLastMessageId → scraped meta (+ row)
+  const byBeaconId = new Map(); // pixel src bid → scraped
   for (const row of findRows()) {
-    const gmailMessageId = String(rowGmailMessageId(row) || '').trim() || null;
-    const subject = norm(
-      row.querySelector('span.bog, .y6 span, td.xY .bog, div.y6')?.textContent,
-    );
-    const to = cleanEmails(
-      [...row.querySelectorAll('span[email]')].map((el) => el.getAttribute('email')),
-    );
-    const sentAt = norm(
-      row.querySelector('td.xW.xY span[title], td.xW span[title]')?.getAttribute('title')
-      || row.querySelector('td.xW.xY span[aria-label]')?.getAttribute('aria-label'),
-    );
-    const meta = { row, gmailMessageId, subject, to, sentAt, host: null };
+    const gmailMessageId = String(canonicalLegacyLastMessageId(row) || '').trim() || null;
+    const beaconId = scrapeLatestSentBeaconId(row) || null;
+    const meta = { row, gmailMessageId, beaconId, host: null };
     list.push(meta);
     if (gmailMessageId && !byId.has(gmailMessageId)) byId.set(gmailMessageId, meta);
+    if (beaconId && !byBeaconId.has(beaconId)) byBeaconId.set(beaconId, meta);
   }
-  return { list, byId };
+  return { list, byId, byBeaconId };
 }
 
 /**
- * Mapping is beacon-driven:
- * 1) scrape current page emails (store legacy message ids)
- * 2) walk beacon.list; exact gmailMessageId → scraped id → paint
- * 3) else skip (row stays Untracked)
+ * Mapping: last-non-draft / last-message-id first; else pixel src === doc.id.
  *
  * @param {{ quiet?: boolean }} [opts] quiet=true → remount repair (no storage spam /
  *   no beacon host). Full logs only on navigation paints.
@@ -657,9 +786,10 @@ function decorateRows({ quiet = false } = {}) {
   try {
     const from = accountFrom();
     const b = from ? bucket(from) : { docs: [], fetched: false };
-    const { list: scraped, byId } = scrapePageEmails();
+    const { list: scraped, byId, byBeaconId } = scrapePageEmails();
     const scrapedIds = [...byId.keys()];
     if (!quiet) syncDebugSentEmails(scraped);
+    paintPixelSummary(b.docs);
 
     // Default every visible row to Untracked.
     for (const email of scraped) {
@@ -678,20 +808,10 @@ function decorateRows({ quiet = false } = {}) {
       else if (!b.fetched) dbg('decorateRows: beacon cache not fetched yet');
     }
 
-    // Drive from beacon tokens, not from the email list.
-    for (const doc of b.docs) {
-      const { email, mid, reason } = lookupScrapedByBeacon(byId, doc);
-      if (reason !== 'exact-match') {
-        skipped += 1;
-        beaconReport.push({
-          beaconId: doc.id,
-          gmailMessageId: mid || null,
-          matched: false,
-          reason,
-          subject: doc.meta?.subject || '',
-        });
-        continue;
-      }
+    const claimed = new Set();
+    const fallbacks = [];
+
+    const paintDoc = (doc, email, mid, reason) => {
       if (!email.host) email.host = mountBadge(email.row);
       if (!email.host) {
         skipped += 1;
@@ -701,17 +821,52 @@ function decorateRows({ quiet = false } = {}) {
           matched: false,
           reason: 'row-host-mount-failed',
         });
-        continue;
+        return;
       }
+      claimed.add(email);
       paintPill(email.host, doc);
       exactMatched += 1;
+      if (mid) scheduleEnsureOutreach(mid, doc.id);
       beaconReport.push({
         beaconId: doc.id,
         gmailMessageId: mid,
         matched: true,
-        reason: 'exact-match',
+        reason,
         subject: doc.meta?.subject || '',
       });
+    };
+
+    // Drive from beacon tokens. Legacy message-id wins over pixel src.
+    for (const doc of b.docs) {
+      const { email, mid, reason } = lookupScrapedByBeacon(byId, byBeaconId, doc);
+      if (reason === 'exact-match') {
+        paintDoc(doc, email, mid, reason);
+      } else if (reason === 'beacon-id-fallback') {
+        fallbacks.push({ doc, email, mid, reason });
+      } else {
+        skipped += 1;
+        beaconReport.push({
+          beaconId: doc.id,
+          gmailMessageId: mid || null,
+          matched: false,
+          reason,
+          subject: doc.meta?.subject || '',
+        });
+      }
+    }
+    for (const hit of fallbacks) {
+      if (claimed.has(hit.email)) {
+        skipped += 1;
+        beaconReport.push({
+          beaconId: hit.doc.id,
+          gmailMessageId: hit.mid || null,
+          matched: false,
+          reason: 'superseded-by-legacy-id',
+          subject: hit.doc.meta?.subject || '',
+        });
+        continue;
+      }
+      paintDoc(hit.doc, hit.email, hit.mid, hit.reason);
     }
 
     if (!quiet) {
@@ -731,7 +886,7 @@ function decorateRows({ quiet = false } = {}) {
         at: new Date().toISOString(),
         build: MAIL_TRACK_BUILD,
         view: 'list',
-        driver: 'beacon-list',
+        driver: 'legacy-id+beacon-fallback',
         listKey: sentListKey(),
         from: from || null,
         fetched: !!b.fetched,
@@ -750,57 +905,34 @@ function decorateRows({ quiet = false } = {}) {
   }
 }
 
+/** One thread-level pill host in Gmail conversation toolbar (.bHJ). */
 function mountOpenBadge() {
-  const h3 = document.querySelector(
-    'div[role="main"] td.c2 h3.iw.gFxsud, td.c2 h3.iw.gFxsud, td.c2 h3.iw',
-  );
-  if (!h3) return null;
-  const td = h3.closest('td.c2');
-  if (td) td.classList.add(OPEN_TD_CLASS);
-  const rapwed = td?.querySelector?.('h3.iw.rapwed');
-  const anchor = rapwed || h3;
-  const parent = anchor.parentNode;
-  if (!parent) return null;
-  let host = td?.querySelector?.(`.${OPEN_CLASS}[${HOST_ATTR}]`)
-    || parent.querySelector?.(`.${OPEN_CLASS}[${HOST_ATTR}]`);
-  if (host) {
-    if (host.previousElementSibling !== anchor) parent.insertBefore(host, anchor.nextSibling);
-    return host;
-  }
+  const bar = document.querySelector('div[role="main"] .bHJ')
+    || document.querySelector('.bHJ');
+  if (!bar) return null;
+  let host = bar.querySelector(`.${OPEN_CLASS}[${HOST_ATTR}]`);
+  if (host) return host;
   host = document.createElement('span');
   host.className = OPEN_CLASS;
   host.setAttribute(HOST_ATTR, '1');
-  parent.insertBefore(host, anchor.nextSibling);
+  // Prefer inserting before Expand-all / Print controls when present.
+  const firstBtn = bar.querySelector('button, [role="button"]');
+  if (firstBtn?.parentNode === bar) bar.insertBefore(host, firstBtn);
+  else bar.prepend(host);
   return host;
 }
 
+/** Open conversation: last-non-draft / last-message-id + pixel src fallback key. */
 function scrapeOpenEmail() {
-  const gmailMessageId = String(rowGmailMessageId(document) || '').trim() || null;
-  const subject = norm(document.querySelector('h2.hP, div[role="main"] h2.hP')?.textContent);
-  const to = cleanEmails(
-    [...document.querySelectorAll(
-      'span.g2[email], .hb span[email], .ady span[email], span[email]',
-    )].map((el) => el.getAttribute('email')),
-  );
-  const sentAt = norm(
-    document.querySelector('span.g3[title], span[title*="PM"], span[title*="AM"]')?.getAttribute('title'),
-  );
-  // Hardened Sent copy keeps <img src="<beaconId>" data-jobsimp-beacon="...">.
-  const html = [...document.querySelectorAll('div.a3s.aiL, div.a3s, div.ii.gt')]
-    .map((el) => el.innerHTML).join('\n');
-  let beaconId = null;
-  const marked = document.querySelector('img[data-jobsimp-beacon]');
-  if (marked) {
-    beaconId = String(marked.getAttribute('data-jobsimp-beacon') || '').trim() || null;
-    const src = String(marked.getAttribute('src') || '').trim();
-    if (!beaconId && src && !/^https?:/i.test(src) && !src.includes('/')) beaconId = src;
-  }
-  if (!beaconId) beaconId = extractBeaconIds(html)[0] || null;
-
-  const meta = { gmailMessageId, subject, to, sentAt, beaconId };
+  const main = document.querySelector('div[role="main"]') || document;
+  const gmailMessageId = String(canonicalLegacyLastMessageId(main) || '').trim() || null;
+  const beaconId = scrapeLatestSentBeaconId(main) || null;
+  const meta = { gmailMessageId, beaconId, host: null };
   const byId = new Map();
+  const byBeaconId = new Map();
   if (gmailMessageId) byId.set(gmailMessageId, meta);
-  return { list: [meta], byId, beaconId };
+  if (beaconId) byBeaconId.set(beaconId, meta);
+  return { list: [meta], byId, byBeaconId };
 }
 
 function decorateOpen({ quiet = false } = {}) {
@@ -811,36 +943,35 @@ function decorateOpen({ quiet = false } = {}) {
 
     const from = accountFrom();
     const b = from ? bucket(from) : { docs: [], fetched: false };
-    const { list: scraped, byId, beaconId: bodyBeaconId } = scrapeOpenEmail();
-    paintPill(host, { id: null }); // default Untracked
+    const { list: scraped, byId, byBeaconId } = scrapeOpenEmail();
+    paintPill(host, { id: null }); // default Untracked / no pill match
     if (!quiet) syncDebugSentEmails(scraped);
 
-    let matchedDoc = null;
-    let reason = 'no-match';
-    // Open view: exact map via hardened img beacon id first.
-    if (bodyBeaconId) {
-      matchedDoc = b.docs.find((d) => d.id === bodyBeaconId) || null;
-      reason = matchedDoc ? 'exact-match-body-beacon-id' : 'body-beacon-id-not-in-cache';
-    }
-    // Fallback: exact gmailMessageId ↔ scraped legacy id (same as list).
-    if (!matchedDoc) {
-      for (const doc of b.docs) {
-        const hit = lookupScrapedByBeacon(byId, doc);
-        if (hit.reason === 'exact-match') {
-          matchedDoc = doc;
-          reason = 'exact-match-gmailMessageId';
-          break;
-        }
+    let exactDoc = null;
+    let fallbackDoc = null;
+    for (const doc of b.docs) {
+      const hit = lookupScrapedByBeacon(byId, byBeaconId, doc);
+      if (hit.reason === 'exact-match') {
+        exactDoc = doc;
+        break;
       }
+      if (hit.reason === 'beacon-id-fallback' && !fallbackDoc) fallbackDoc = doc;
     }
+    const matchedDoc = exactDoc || fallbackDoc;
+    const reason = exactDoc ? 'exact-match' : fallbackDoc ? 'beacon-id-fallback' : 'no-match';
 
     if (matchedDoc) paintPill(host, matchedDoc);
 
+    // Always try to materialize outreach from the open conversation's legacy id
+    // (repairs threads missing from the dashboard, e.g. after bad dedupe).
+    const openMid = String(scraped[0]?.gmailMessageId || '').trim();
+    if (openMid) scheduleEnsureOutreach(openMid, matchedDoc?.id || scraped[0]?.beaconId || '');
+
     if (!quiet) {
-      dbg('decorateOpen (beacon→email)', {
+      dbg('decorateOpen', {
         from: from || null,
-        bodyBeaconId: bodyBeaconId || null,
         scrapedId: scraped[0]?.gmailMessageId || null,
+        scrapedBeaconId: scraped[0]?.beaconId || null,
         beacons: b.docs.length,
         matched: !!matchedDoc,
         reason,
@@ -850,11 +981,11 @@ function decorateOpen({ quiet = false } = {}) {
         at: new Date().toISOString(),
         build: MAIL_TRACK_BUILD,
         view: 'open',
-        driver: 'beacon-list',
+        driver: 'legacy-id+beacon-fallback',
         from: from || null,
         fetched: !!b.fetched,
-        bodyBeaconId: bodyBeaconId || null,
         scrapedId: scraped[0]?.gmailMessageId || null,
+        scrapedBeaconId: scraped[0]?.beaconId || null,
         matched: !!matchedDoc,
         reason,
         beaconId: matchedDoc?.id || null,
@@ -984,34 +1115,39 @@ async function onSend(root, captured) {
   const to = (captured.to && captured.to.length) ? captured.to : draft.meta.to;
   const subject = captured.subject || draft.meta.subject;
   if (!from || !to.length) {
-    console.warn('[JobSimp] beacon.create skipped: missing from/to');
+    console.warn('[JobSimp] finalizeNativeSend skipped: missing from/to');
     return;
   }
+  const sentAt = formatBeaconSentAt(new Date());
   draft.meta = {
     source: SOURCE_GMAIL,
     to,
     from,
     subject,
-    sentAt: formatBeaconSentAt(new Date()),
+    sentAt,
   };
   draft.count = 0;
   // Outbound message must carry a live src so recipient open can count.
+  // Cloud Run register happens AFTER harden in the SW (durable tx).
   if (body) injectPixel(body, draft.id, { defer: false });
+  const legacyHint = String(canonicalLegacyLastMessageId(
+    document.querySelector('div[role="main"]') || document,
+  ) || '').trim();
   try {
-    const doc = await send('beacon.create', {
-      id: draft.id,
-      count: 0,
-      meta: { ...draft.meta },
+    if (draft.reusedBeacon) {
+      try { await send('beacon.reset', { id: draft.id }); } catch { /* registerFull also resets */ }
+    }
+    await send('beacon.hardenSent', {
+      beaconId: draft.id,
+      to: draft.meta.to,
+      from: draft.meta.from,
+      subject: draft.meta.subject,
+      source: SOURCE_GMAIL,
+      sentAt,
+      gmailMessageIdHint: legacyHint || undefined,
     });
-    if (doc) mergeDoc(from, doc);
-    // Native Gmail send — we never get a message id back from it directly,
-    // so hardening has to find the Sent copy first (by the beacon id
-    // already embedded in the body) before it can strip+trash+reinsert it.
-    // Fire-and-forget: this involves polling Gmail and must not block the
-    // compose window.
-    send('beacon.hardenSent', { beaconId: draft.id, to: draft.meta.to }).catch(() => {});
   } catch (e) {
-    console.warn('[JobSimp] beacon.create failed', e);
+    console.warn('[JobSimp] finalizeNativeSend failed', e);
   }
 }
 
@@ -1019,9 +1155,8 @@ async function onSend(root, captured) {
  * "Schedule send" queues the message without sending it — it can fire
  * hours or days later, possibly in a different browser session entirely.
  * The pixel has to go into the body now (this is the content that
- * eventually gets sent), but registering the beacon now would be
- * premature — the background alarm-driven watch (beacon.watchScheduled)
- * confirms actual send before registering.
+ * eventually gets sent), but Cloud Run registration is deferred until
+ * the SW watch confirms actual send, then harden → register-once.
  */
 async function onScheduleSend(root, captured) {
   if (!isTracked(root)) return;
@@ -1094,14 +1229,13 @@ function captureAndScheduleSend(root) {
 async function onRoute() {
   await ensureStyles();
   const cur = hash();
-  watchPixelLoads();
 
   // Decorate is owned exclusively by startDecorateLoop() — never start/stop it here.
   // onRoute only refreshes the beacon cache when cold.
-  if (isSentList() || isSentOpen()) {
+  if (isSentList() || isSentOpen() || hasOpenConversation()) {
     const from = accountFrom();
-    if (from && !bucket(from).fetched) {
-      dbg('onRoute: cold beacon cache → list once', { from, listKey: sentListKey() });
+    if (from && (isSentOpen() || hasOpenConversation() || !bucket(from).fetched)) {
+      dbg('onRoute: beacon.list', { from, open: isSentOpen(), listKey: sentListKey() });
       await ensureSentDocs(true);
     } else if (!from) {
       dbg('onRoute: accountFrom empty — loop will decorate once account appears');
@@ -1142,10 +1276,17 @@ function remountOnly() {
 
 function decorateLoopTick() {
   if (!extAlive()) return; // leave interval running; next tick retries after reload races
-  if (decorateLock) return;
   try {
-    if (isSentList()) decorateRows({ quiet: true });
-    else if (isSentOpen()) decorateOpen({ quiet: true });
+    if (!decorateLock) {
+      if (isSentList()) decorateRows({ quiet: true });
+      else if (isSentOpen() || hasOpenConversation()) decorateOpen({ quiet: true });
+    }
+    if (isSentAny()) {
+      const from = accountFrom();
+      paintPixelSummary(from ? bucket(from).docs : []);
+    } else {
+      removePixelSummary();
+    }
   } catch {
     /* never let a paint glitch kill the loop */
   }
@@ -1197,6 +1338,22 @@ function startGmailMailTrack() {
   };
   document.addEventListener('focusin', onFocusIn, true);
 
+  // Native Gmail refresh (toolbar) → force beacon.list so Sent pills update.
+  const onGmailRefreshClick = (e) => {
+    let hit = null;
+    for (let n = e.target; n && n !== document; n = n.parentElement) {
+      if (n.getAttribute?.('act') === '20') { hit = n; break; }
+      const blob = `${n.getAttribute?.('aria-label') || ''} ${n.getAttribute?.('data-tooltip') || ''} ${n.getAttribute?.('title') || ''}`;
+      if (/\brefresh\b/i.test(blob)) { hit = n; break; }
+    }
+    if (!hit) return;
+    ensureSentDocs(true).then(() => {
+      if (isSentOpen() || hasOpenConversation()) decorateOpen();
+      else decorateRows();
+    }).catch(() => {});
+  };
+  document.addEventListener('click', onGmailRefreshClick, true);
+
   const onSendClick = (e) => {
     const btn = e.target?.closest?.(
       'div[role="button"][aria-label*="Send" i], div[data-tooltip*="Send" i], div[aria-label^="Send"]',
@@ -1226,7 +1383,7 @@ function startGmailMailTrack() {
 
   // One cold-cache fetch if account chip appears after first paint.
   setTimeout(() => {
-    if (!extAlive() || !(isSentList() || isSentOpen())) return;
+    if (!extAlive() || !(isSentList() || isSentOpen() || hasOpenConversation())) return;
     const from = accountFrom();
     if (!from || bucket(from).fetched) return;
     dbg('account late → one beacon.list (loop keeps decorating)');
@@ -1239,6 +1396,7 @@ function startGmailMailTrack() {
     document.removeEventListener('click', onSendClick, true);
     document.removeEventListener('keydown', onSendKey, true);
     document.removeEventListener('focusin', onFocusIn, true);
+    document.removeEventListener('click', onGmailRefreshClick, true);
     mo.disconnect();
     clearTimeout(t);
     stopDecorateLoop();
@@ -1246,43 +1404,44 @@ function startGmailMailTrack() {
   };
 }
 
-  // #region agent log
-  window.__jobsimpTrack = {
-    caches,
-    drafts,
-    accountFrom,
-    bucket,
-    ensureSentDocs,
-    decorateRows,
-    scrapePageEmails,
-    lookupScrapedByBeacon,
-    rowGmailMessageId,
-    debug,
-    syncDebugBeacons,
-    route: () => ({ hash: hash(), isSentList: isSentList(), isSentOpen: isSentOpen() }),
-    dump() {
-      const from = accountFrom();
-      const out = {
-        accountFrom: from || null,
-        route: this.route(),
-        buckets: [...caches.entries()].map(([k, v]) => ({ from: k, fetched: v.fetched, docs: v.docs.length })),
-        docs: from ? bucket(from).docs : [],
-        rows: findRows().length,
-        pills: document.querySelectorAll('.jobsimp-pill').length,
-        stylesInjected: !!document.getElementById('jobsimp-track-styles'),
-      };
-      console.table(out.buckets);
-      console.log('[JobSimp] cache dump', out);
-      return out;
-    },
-  };
-  console.log('[JobSimp] debug handle ready → __jobsimpTrack.dump()');
-  // #endregion
+  if (debug) {
+    window.__jobsimpTrack = {
+      caches,
+      drafts,
+      accountFrom,
+      bucket,
+      ensureSentDocs,
+      decorateRows,
+      scrapePageEmails,
+      lookupScrapedByBeacon,
+      canonicalLegacyLastMessageId,
+      scrapeLatestSentBeaconId,
+      debug,
+      syncDebugBeacons,
+      route: () => ({ hash: hash(), isSentList: isSentList(), isSentOpen: isSentOpen() }),
+      dump() {
+        const from = accountFrom();
+        const out = {
+          accountFrom: from || null,
+          route: this.route(),
+          buckets: [...caches.entries()].map(([k, v]) => ({ from: k, fetched: v.fetched, docs: v.docs.length })),
+          docs: from ? bucket(from).docs : [],
+          rows: findRows().length,
+          pills: document.querySelectorAll('.jobsimp-pill').length,
+          stylesInjected: !!document.getElementById('jobsimp-track-styles'),
+        };
+        console.table(out.buckets);
+        console.log('[JobSimp] cache dump', out);
+        return out;
+      },
+    };
+    console.log('[JobSimp] debug handle ready → __jobsimpTrack.dump()');
+  }
 
   stopMailTrack = startGmailMailTrack();
+  // Mark live only after tracker is running — failed imports must not stick.
+  window.__jobsimpMailTrack = chrome.runtime.id;
 })().catch((e) => {
-  // #region agent log
-  fetch('http://127.0.0.1:7865/ingest/06d9d3db-aa25-412e-bacd-b63339de625e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'84f185'},body:JSON.stringify({sessionId:'84f185',runId:'pre-fix',hypothesisId:'F',location:'mail-track.js:iife-catch',message:'mail-track startup rejected',data:{error:String(e&&e.message||e),name:String(e&&e.name||''),stack:String(e&&e.stack||'').slice(0,300)},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
+  try { delete window.__jobsimpMailTrack; } catch { /* ignore */ }
   console.warn('[JobSimp] mail-track failed to start', e);
 });

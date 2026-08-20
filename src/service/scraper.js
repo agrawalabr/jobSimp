@@ -54,7 +54,7 @@ export function installScraper() {
 
   // Light company hint only — drop ATS/aggregator brand names and generic words so we
   // never mislabel; the LLM resolves the real employer from the JD text.
-  const BRAND_JUNK = /^(greenhouse|lever|workday|ashby|icims|smartrecruiters|jobvite|bamboohr|workable|recruitee|breezy|rippling|dover|taleo|successfactors|adp|eightfold|teamtailor|personio|linkedin|indeed|glassdoor|ziprecruiter|monster|careerbuilder|dice|simplyhired|wellfound|built ?in|handshake|jobright|simplify|otta|remote ?ok|we work remotely|jobs?|careers?|home|apply|job application|search|feed)$/i;
+  const BRAND_JUNK = /^(greenhouse|lever|workday|ashby|icims|smartrecruiters|jobvite|bamboohr|workable|recruitee|breezy|rippling|dover|taleo|successfactors|adp|eightfold|teamtailor|personio|gem|linkedin|indeed|glassdoor|ziprecruiter|monster|careerbuilder|dice|simplyhired|wellfound|built ?in|handshake|jobright|simplify|otta|remote ?ok|we work remotely|jobs?|careers?|home|apply|job application|search|feed)$/i;
   const lightCompany = (c) => {
     c = clean(c);
     return (!c || BRAND_JUNK.test(c)) ? '' : c.slice(0, 80);
@@ -157,6 +157,8 @@ export function installScraper() {
       '.job-details-jobs-unified-top-card__top-card-top-company a[href*="/company/"]',
       '[class*="jobs-unified-top-card"] a[href*="/company/"]',
       'a[data-test="employer-name"][href*="linkedin.com/company/"]',
+      '.jobs-search__job-details a[href*="/company/"]',
+      '.scaffold-layout__detail a[href*="/company/"]',
       'a[href*="linkedin.com/company/"]',
     ];
     for (const sel of sels) {
@@ -235,7 +237,22 @@ export function installScraper() {
     { name: 'workday', host: /myworkdayjobs\.com$/, title: '[data-automation-id="jobPostingHeader"], h1', company: null, jd: '[data-automation-id="jobPostingDescription"]' },
     { name: 'indeed', host: /indeed\.com$/, title: '.jobsearch-JobInfoHeader-title, h1', company: '[data-company-name]', jd: '#jobDescriptionText' },
     { name: 'ashby', host: /ashbyhq\.com$/, title: 'h1', company: null, jd: '[class*=description], main' },
-    { name: 'linkedin', host: /linkedin\.com$/, title: 'h1', company: '.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name', jd: '.jobs-description__content, #job-details' },
+    {
+      name: 'linkedin',
+      host: /linkedin\.com$/,
+      // Search split-view + /jobs/view — never scrape the left-rail job list.
+      root: '.jobs-search__job-details--container, .jobs-search__job-details, .scaffold-layout__detail, .job-view-layout, .jobs-details',
+      title: '.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, h1',
+      company: '.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name',
+      jd: '.jobs-description__content, #job-details, .jobs-box__html-content, .jobs-description-content__text, .show-more-less-html__markup',
+    },
+    {
+      name: 'gem',
+      host: /gem\.com$/,
+      title: 'h1',
+      company: null,
+      jd: 'article, [class*=JobPost], [class*=job-post], [class*=description], main',
+    },
     { name: 'glassdoor', host: /glassdoor\.com$/, title: 'h1', company: '[class*=EmployerProfile] a, [data-test="employer-name"]', jd: '[class*=JobDetails_jobDescription], #JobDescriptionContainer' },
     { name: 'ziprecruiter', host: /ziprecruiter\.com$/, title: 'h1', company: '[class*=hiring_company], a[class*=company]', jd: '.job_description, [class*=jobDescriptionSection]' },
     { name: 'smartrecruiters', host: /smartrecruiters\.com$/, title: 'h1', company: '[itemprop=hiringOrganization], .job-company', jd: '[itemprop=description], #st-jobDescription' },
@@ -250,19 +267,47 @@ export function installScraper() {
     return SITE_SELECTORS.find((s) => s.host.test(host) || s.host.test(host.replace(/^.*\.(?=[^.]+\.[^.]+$)/, ''))) || null;
   }
 
+  function firstIn(root, sel) {
+    if (!sel) return null;
+    const scope = root || document;
+    return sel.split(',').map((s) => scope.querySelector(s.trim())).find(Boolean) || null;
+  }
+
+  /** LinkedIn truncates the JD behind “See more”. */
+  function expandTruncated(root) {
+    const scope = root || document;
+    const btns = [...scope.querySelectorAll('button, [role=button]')]
+      .filter((b) => /see more|show more/i.test(`${b.textContent || ''} ${b.getAttribute('aria-label') || ''}`));
+    for (const b of btns.slice(0, 4)) {
+      try { b.click(); } catch { /* ignore */ }
+    }
+  }
+
   function scrapeSelectors() {
     const site = siteFor();
     if (!site) { log('selector', `no profile for "${location.hostname}"`); return null; }
     log('selector', `profile "${site.name}" matched "${location.hostname}"`);
 
-    const jdEl = site.jd.split(',').map((s) => document.querySelector(s.trim())).find(Boolean);
-    const jdText = jdEl ? (jdEl.innerText || jdEl.textContent || '') : '';
+    const root = firstIn(document, site.root) || document;
+    if (site.name === 'linkedin') expandTruncated(root);
+
+    const jdEl = firstIn(root, site.jd);
+    let jdText = jdEl ? (jdEl.innerText || jdEl.textContent || '') : '';
+    if (site.name === 'gem' && jdEl) {
+      // Same page hosts JD + apply form — drop the form so autofill fields aren't in the JD.
+      const form = jdEl.querySelector('form');
+      if (form) {
+        const clone = jdEl.cloneNode(true);
+        clone.querySelectorAll('form').forEach((f) => f.remove());
+        jdText = clone.innerText || clone.textContent || jdText;
+      }
+    }
     if (!jdEl || clean(jdText).length < MIN_JD_CHARS) return null;
 
-    const q = (sel) => (sel ? clean(document.querySelector(sel)?.textContent) : '');
+    const q = (sel) => clean(firstIn(root, sel)?.textContent);
     let company = q(site.company);
     if (!company && site.name === 'workday') company = location.hostname.split('.')[0];
-    if (!company && (site.name === 'lever' || site.name === 'greenhouse')) {
+    if (!company && (site.name === 'lever' || site.name === 'greenhouse' || site.name === 'gem')) {
       company = location.pathname.split('/').filter(Boolean)[0] || '';
     }
     return result(`selector:${site.name}`, { role: q(site.title), company, jdText: jdText.replace(/\n{3,}/g, '\n\n').trim() });
@@ -301,7 +346,7 @@ export function installScraper() {
     return false;
   }
 
-  const APPLY_RE = /^\s*(easy apply|apply now|apply for this job|apply|submit application|start application|submit|i'?m interested)\s*$/i;
+  const APPLY_RE = /^\s*(easy apply|apply now|apply for this job|apply and save|apply without saving|apply|submit application|start application|submit|i'?m interested)\s*$/i;
   function hasApplyButton() {
     return [...document.querySelectorAll('a,button,input[type="submit"],[role="button"]')]
       .some((b) => APPLY_RE.test(clean(b.textContent || b.value || '')));

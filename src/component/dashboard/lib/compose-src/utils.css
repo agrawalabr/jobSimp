@@ -72,6 +72,8 @@
   width: var(--fmt-ico);
   height: var(--fmt-ico);
   flex: none;
+  position: relative;
+  z-index: 1;
 }
 
 .js-quill-toolbar :is(button:hover, button.ql-active, button:focus) {
@@ -158,8 +160,9 @@
   z-index: 40;
 }
 
-.js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {
-  display: block;
+.js-quill-toolbar .ql-picker.ql-expanded[data-tip]::after {
+  opacity: 0 !important;
+  visibility: hidden !important;
 }
 
 .compose-format .js-quill-toolbar .ql-picker.ql-expanded .ql-picker-options {

@@ -20,21 +20,21 @@
   }
 
   .jobsimp-pill.untracked {
-    color: #5f6368 !important;
+    color: #9aa0a6 !important;
     background: #fff !important;
     border: 1px dashed #9aa0a6 !important;
   }
 
   .jobsimp-pill.not-opened {
-    color: #5f6368 !important;
-    background: #f1f3f4 !important;
-    border: 1px solid #dadce0 !important;
+    color: #c89f02 !important;
+    background: #fef7e0 !important;
+    border: 1px solid #c89f02 !important;
   }
 
   .jobsimp-pill.opened {
-    color: #137333 !important;
+    color: #5aa08e !important;
     background: #e6f4ea !important;
-    border: 1px solid #ceead6 !important;
+    border: 1px solid #5aa08e !important;
   }
 
   .zA > td.apU.jobsimp-track-td,
@@ -46,16 +46,12 @@
     white-space: nowrap;
   }
 
-  td.c2.jobsimp-track-open-td {
-    display: flex !important;
+  .bHJ .jobsimp-track-open {
+    display: inline-flex !important;
     align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 8px !important;
-  }
-
-  td.c2.jobsimp-track-open-td > h3.iw {
-    flex: 0 1 auto !important;
-    min-width: 0 !important;
+    margin-right: 8px !important;
+    flex: 0 0 auto !important;
+    align-self: center !important;
   }
 
   .jobsimp-track-open {
@@ -100,10 +96,107 @@
   .jobsimp-compose-track[data-jobsimp-compose-track="off"] img {
     filter: grayscale(1) opacity(0.55);
   }
+
+  div.a5C{
+    padding: 8px 15px !important;
+  }
+  
+  div.H2{
+    align-self: flex-start !important;
+  }
+
+  /* No solid fill — blends in Gmail light and dark. */
+  .jobsimp-track-summary {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    height: 32px !important;
+    margin: 0 0 0 auto !important;
+    padding: 0 14px !important;
+    border-radius: 10px !important;
+    color: var(--jobsimp-chip-fg, inherit) !important;
+    border: 1px solid rgb(116 119 117) !important;
+    box-shadow: none !important;
+    font: 500 13px / 18px "Google Sans", Roboto, system-ui, sans-serif !important;
+    letter-spacing: 0.01em !important;
+    white-space: nowrap !important;
+    box-sizing: border-box !important;
+    top: 0 !important;
+    right: auto !important;
+    z-index: 1 !important;
+    user-select: none;
+  }
+
+  .jobsimp-track-summary-mark {
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+    background: #8ab4f8 !important;
+    box-shadow: 0 0 0 3px rgba(138, 180, 248, 0.18) !important;
+    flex: 0 0 auto !important;
+  }
+
+  .jobsimp-track-summary.is-empty .jobsimp-track-summary-mark {
+    background: currentColor !important;
+    opacity: 0.35 !important;
+    box-shadow: none !important;
+  }
+
+  .jobsimp-track-summary-body {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0 !important;
+    height: 32px !important;
+    line-height: 18px !important;
+  }
+
+  .jobsimp-track-summary .jobsimp-track-stat {
+    display: inline-flex !important;
+    align-items: center !important;
+    height: 32px !important;
+    line-height: 18px !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    font-weight: 500 !important;
+    background: transparent !important;
+    box-sizing: border-box !important;
+  }
+
+  .jobsimp-track-summary .jobsimp-track-stat b {
+    font-weight: 600 !important;
+    font-variant-numeric: tabular-nums !important;
+    margin-right: 4px !important;
+  }
+
+  .jobsimp-track-summary .jobsimp-track-stat.opened { color: #81c995 !important; }
+  .jobsimp-track-summary .jobsimp-track-stat.waiting { color: #fdd663 !important; }
+  .jobsimp-track-summary .jobsimp-track-stat.total { color: inherit !important; }
+
+  .jobsimp-track-summary-dot {
+    display: inline-block !important;
+    width: 3px !important;
+    height: 3px !important;
+    margin: 0 10px !important;
+    border-radius: 50% !important;
+    background: currentColor !important;
+    opacity: 0.35 !important;
+    flex: 0 0 auto !important;
+  }
+
+  .jobsimp-track-summary.is-empty .jobsimp-track-summary-body {
+    opacity: 0.7 !important;
+  }
 </style>
 
 <template id="jobsimp-pill-tpl">
   <span class="jobsimp-pill untracked">Untracked</span>
+</template>
+
+<template id="jobsimp-summary-tpl">
+  <div class="jobsimp-track-summary" role="status" aria-live="polite">
+    <span class="jobsimp-track-summary-mark" aria-hidden="true"></span>
+    <span class="jobsimp-track-summary-body"></span>
+  </div>
 </template>
 
 <template id="jobsimp-compose-track-tpl">

@@ -5,7 +5,7 @@
 import { job, resume, answer, transaction, jdgraph } from '../dao/index.js';
 import { identityBasics, identityContext } from './identity.js';
 import { requestLLM, extractJson } from './llm.js';
-import { FIELD_RESOLVE_PROMPT, TAILOR_PROMPT } from '../static/prompts.js';
+import { FIELD_RESOLVE_PROMPT, FIELD_REWRITE_PROMPT, TAILOR_PROMPT } from '../static/prompts.js';
 import { jobCacheKey } from '../static/jobUrl.js';
 import { getSettings } from './settings.js';
 
@@ -53,11 +53,15 @@ function fastResolve(field, basics, priorByLabel, answers) {
 }
 
 /** For select/radio: only trust a fast value that maps onto an actual option. */
-function matchOption(value, options = []) {
-  const v = String(value).toLowerCase();
-  return options.find((o) => o.toLowerCase() === v)
-    || options.find((o) => o.toLowerCase().includes(v) || v.includes(o.toLowerCase()))
-    || null;
+export function matchOption(value, options = []) {
+  if (!options.length) return String(value ?? '');
+  const v = String(value ?? '').trim().toLowerCase();
+  if (!v) return '';
+  const opts = options.map((o) => String(o ?? '').trim()).filter(Boolean);
+  const exact = opts.find((o) => o.toLowerCase() === v);
+  if (exact) return exact;
+  const loose = opts.find((o) => o.toLowerCase().includes(v) || v.includes(o.toLowerCase()));
+  return loose || '';
 }
 
 async function llmSettings() {
@@ -122,7 +126,6 @@ export async function consolidatePage({ jobKey, resumeId, url, stepLabel = '', f
   for (const f of fields) {
     // 'multi' (skills tag inputs) are driven deterministically page-side from resumeData.
     if (f.kind === 'multi') { resolved.push({ ...f, value: '', source: 'profile', needsUser: false }); continue; }
-    if (f.kind === 'custom') { unresolved.push(f); continue; }
     const fast = fastResolve(f, basics, priorByLabel, answers);
     if (fast) {
       const hasOptions = Array.isArray(f.options) && f.options.length;
@@ -143,7 +146,7 @@ export async function consolidatePage({ jobKey, resumeId, url, stepLabel = '', f
     const prior = (t.fieldAnswers || []).filter((a) => !a.needsUser)
       .map((a) => ({ q: a.canonicalQ || a.label, a: a.value })).slice(0, 40);
     const prompt = `${FIELD_RESOLVE_PROMPT}
-\n=== FIELDS ===\n${JSON.stringify(unresolved.map(({ fieldId, label, type, required, options }) => ({ fieldId, label, type, required, options: (options || []).slice(0, 40) })))}
+\n=== FIELDS ===\n${JSON.stringify(unresolved.map(({ fieldId, label, type, required, options }) => ({ fieldId, label, type, required, options: (options || []).slice(0, 80) })))}
 \n=== CANDIDATE ===\n${JSON.stringify(ctx)}
 \n=== JOB ===\n${JSON.stringify(jobCtx)}
 \n=== PRIOR ANSWERS ===\n${JSON.stringify(prior)}`;
@@ -201,6 +204,87 @@ export async function consolidatePage({ jobKey, resumeId, url, stepLabel = '', f
     skills: (parsed.skills || []).slice(0, 15),
   };
   return { answers: resolved, resumeFile, resumeData };
+}
+
+async function jobPromptBits({ jobKey, resumeId, jd = {} }) {
+  const t = await transaction.get(jobKey, resumeId);
+  const r = await resume.active(resumeId);
+  const parsedSource = (t?.mode === 'tailored' && t.tailored?.parsed) ? { ...r, parsed: t.tailored.parsed } : r;
+  const [ctx, g] = await Promise.all([identityContext(parsedSource), jdgraph.get(jobKey)]);
+  const jobCtx = {
+    role: jd.role || '', company: jd.company || '',
+    requirements: (g?.requirements || []).map(({ category, text, importance }) => ({ category, text, importance })),
+  };
+  const prior = (t?.fieldAnswers || []).filter((a) => !a.needsUser)
+    .map((a) => ({ q: a.canonicalQ || a.label, a: a.value })).slice(0, 40);
+  return { t, parsedSource, ctx, jobCtx, prior };
+}
+
+function coerceFieldValue(field, raw) {
+  const hasOptions = Array.isArray(field.options) && field.options.length;
+  const value = hasOptions ? matchOption(raw, field.options) : String(raw ?? '');
+  return { value, needsUser: !value };
+}
+
+/**
+ * Re-resolve a single field (focus-aid Refresh). Does not skip custom dropdowns.
+ */
+export async function resolveOneField({ jobKey, resumeId, field, jd = {}, userPrompt = '' }) {
+  if (!field?.fieldId) throw new Error('Missing field.');
+  const { provider, model, key } = await llmSettings();
+  const { t, ctx, jobCtx, prior } = await jobPromptBits({ jobKey, resumeId, jd });
+  if (!t) throw new Error('No active application. Click Apply again.');
+  const note = String(userPrompt || '').trim().slice(0, 500);
+  const prompt = `${FIELD_RESOLVE_PROMPT}
+\n=== FIELDS ===\n${JSON.stringify([{ fieldId: field.fieldId, label: field.label, type: field.type, required: !!field.required, options: (field.options || []).slice(0, 80) }])}
+\n=== CANDIDATE ===\n${JSON.stringify(ctx)}
+\n=== JOB ===\n${JSON.stringify(jobCtx)}
+\n=== PRIOR ANSWERS ===\n${JSON.stringify(prior)}${note ? `\n=== USER_PROMPT ===\n${note}` : ''}`;
+  const raw = await requestLLM({ provider, model, key, prompt, config: { temperature: 0, maxTokens: 2048 } });
+  const out = extractJson(raw);
+  const a = (out?.answers || []).find((x) => x.fieldId === field.fieldId) || out?.answers?.[0];
+  if (!a || a.needsUser || !a.value) {
+    return { ...field, value: '', source: 'llm', needsUser: true, canonicalQ: a?.canonicalQ || '' };
+  }
+  const coerced = coerceFieldValue(field, a.value);
+  const row = {
+    ...field, value: coerced.value, source: 'llm', needsUser: coerced.needsUser,
+    reusable: !!a.reusable, canonicalQ: a.canonicalQ || '',
+  };
+  await transaction.appendAnswers(jobKey, resumeId, [{
+    fieldId: row.fieldId, page: '', label: row.label, type: row.type, value: row.value,
+    source: 'llm', needsUser: row.needsUser, reusable: row.reusable, canonicalQ: row.canonicalQ,
+  }]);
+  return row;
+}
+
+/**
+ * Rewrite / refresh phrasing for one field (focus-aid Rewrite).
+ * @param {object} p
+ * @param {'refresh'|'rewrite'|'shorter'|'stronger'} [p.instruction]
+ * @param {string} [p.userPrompt] freeform guidance from the field-aid note
+ */
+export async function rewriteField({ jobKey, resumeId, field, currentValue = '', instruction = 'rewrite', jd = {}, userPrompt = '' }) {
+  if (!field?.fieldId) throw new Error('Missing field.');
+  const { provider, model, key } = await llmSettings();
+  const { t, ctx, jobCtx } = await jobPromptBits({ jobKey, resumeId, jd });
+  if (!t) throw new Error('No active application. Click Apply again.');
+  const note = String(userPrompt || '').trim().slice(0, 500);
+  const prompt = `${FIELD_REWRITE_PROMPT}
+\n=== FIELD ===\n${JSON.stringify({ fieldId: field.fieldId, label: field.label, type: field.type, required: !!field.required, options: (field.options || []).slice(0, 80) })}
+\n=== CURRENT ===\n${JSON.stringify(String(currentValue || ''))}
+\n=== INSTRUCTION ===\n${instruction || 'rewrite'}${note ? `\n=== USER_PROMPT ===\n${note}` : ''}
+\n=== CANDIDATE ===\n${JSON.stringify(ctx)}
+\n=== JOB ===\n${JSON.stringify(jobCtx)}`;
+  const raw = await requestLLM({ provider, model, key, prompt, config: { temperature: 0.2, maxTokens: 2048 } });
+  const out = extractJson(raw);
+  if (!out || out.needsUser || !out.value) {
+    return { ...field, value: '', source: 'llm', needsUser: true };
+  }
+  const coerced = coerceFieldValue(field, out.value);
+  return {
+    ...field, value: coerced.value, source: 'llm', needsUser: coerced.needsUser,
+  };
 }
 
 /** Backfill: the user typed a value we couldn't resolve → remember it everywhere. */
