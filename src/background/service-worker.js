@@ -1,7 +1,7 @@
 // JobSimp service worker: message router (Controller).
 // Model: src/dao/<resource>.js classes (get/post/put/delete).
 
-import { draftEmail } from '../email/draft-email.js';
+import { draftEmail, draftLinkedInMessage } from '../email/draft-email.js';
 import { parseResume } from '../service/resume.js';
 import { b64, getGmailMessage, getGmailThread, getGmailConversation, getGmailThreadMeta, getGmailThreadsMetaBatch, getGmailThreadsFullBatch, getGmailAttachment, getGmailMessageForImport, findSentMessagesBySubject, listGmailSentThreads, trashGmailThread } from '../email/gmail.js';
 import { normalizeRecipients, recipientGreetingName, recipientListLabel } from '../static/recipients.js';
@@ -504,6 +504,10 @@ const handlers = {
     if (sender?.tab?.id) applyCtxByTab.delete(sender.tab.id);
     return completeApplication(p);
   },
+  'application.abandon': (_p, sender) => {
+    if (sender?.tab?.id) applyCtxByTab.delete(sender.tab.id);
+    return { ok: true };
+  },
   'tailor.get': async (p) => (await transaction.get(p.jobKey, p.resumeId))?.tailored || null,
 
   'jd.analyze': async (p) => {
@@ -588,6 +592,28 @@ const handlers = {
     }
 
     const recipients = normalizeRecipients(p.recipients || []);
+    if (p.channel === 'linkedin') {
+      const surface = p.surface || (p.mode === 'invite' ? 'invite' : 'message');
+      // Pass identity always; draft-email gates inclusion (outreach / career demand).
+      // JD only when user picked a job in the ⋮ menu.
+      const wantJd = !!p.jobId;
+      const out = await draftLinkedInMessage(s, {
+        surface,
+        userNote: p.userNote || p.context || '',
+        chatHistory: p.chatHistory || '',
+        peerBlurb: p.peerBlurb || '',
+        maxChars: p.maxChars || 0,
+        attachResume: !!p.attachResume,
+        company: wantJd ? (p.company || jobRow?.company || '') : '',
+        role: wantJd ? (p.role || jobRow?.role || '') : '',
+        recipients,
+        identity,
+        jdGraph: wantJd ? jdGraph : null,
+      });
+      if (out?.via !== 'llm') throw new Error('Draft path did not use LLM — reload the extension.');
+      return out;
+    }
+
     console.info('[ai.draft] calling LLM', {
       provider: s.ai?.provider,
       model: s.ai?.model,

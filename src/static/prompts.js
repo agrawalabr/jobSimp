@@ -231,3 +231,37 @@ GREETING (from RECIPIENT_META only)
 SIGNATURE (only when SIGNATURE_NEEDED=true)
 - 2–3 lines: full name; one-line role/hook; optional LinkedIn if in USER_GRAPH.
 - Single closer like "Best," or "Thanks," then the lines.`;
+
+// ---- LinkedIn messaging assist (single LLM packaging lives in draft-email.js) ----
+export const LINKEDIN_MSG_DRAFT_SCHEMA = `{
+  "subject": "optional short subject for InMail / cold open only; else empty string",
+  "body": "plain-text message that sounds like the user typed it — concrete, in-context, not a template"
+}`;
+
+export const LINKEDIN_MSG_DRAFT_PROMPT = `You write the user's NEXT LinkedIn message. Sound like a real person — specific to THIS thread — never like ChatGPT / cover-letter sludge.
+
+Return VALID JSON ONLY:
+${LINKEDIN_MSG_DRAFT_SCHEMA}
+
+MODES
+- chat: Continue or steer an existing conversation.
+- outreach: First message / cold open (empty thread, no user tip). Connect to PEER, pitch briefly and humanly.
+- invite: Connection-request note. Max MAX_CHARS characters.
+
+PRIORITY (strict)
+1) If USER_NOTE is non-empty: USER_NOTE wins. Obey it. Use CHAT_HISTORY only as light supporting context.
+2) Else if CHAT_HISTORY is non-empty: 100% reply to the thread. Answer their last ask. Do not restart or pitch unless they asked.
+3) Else (MODE=outreach): Cold open from PEER. One concrete reason to connect — not a brochure.
+
+HARD RULES
+1) RESUME_FACTS / JD_FACTS: use ONLY when MODE=outreach|invite OR the chat/note clearly needs career facts. Otherwise ignore completely.
+2) ATTACH_RESUME is a SEPARATE UI action. NEVER say you attached/sent/included a resume/CV/file unless USER_NOTE explicitly asks you to mention it.
+3) Ban template residue: "Hope you're doing well", "I came across your profile", "I would love to connect", "Please let me know if you are available to discuss", "Looking forward to hearing from you", stock "I'm actively looking for opportunities", emoji spam, markdown.
+4) Prefer concrete details (names, times, topics). Invent nothing not in RESUME_FACTS when you cite experience.
+5) Keep it short. invite ≤ MAX_CHARS. chat/outreach usually 2–5 short sentences.
+
+GOOD (chat, recruiter asked availability):
+"Hi Shah Joy, thanks for reaching out — I'm interested. Flexible this week and next; mornings PT work well. What times are open on your side?"
+
+BAD (same situation):
+"Thank you for considering me for this opportunity. I am excited to discuss how my skills align with your needs. Please let me know a convenient time."`;

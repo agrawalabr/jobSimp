@@ -8,4 +8,14 @@
 
   installScraper();
   await startWidget();
+
+  // Chat assist + badge run on any LinkedIn URL (not only /jobs/*).
+  if (/(^|\.)linkedin\.com$/i.test(location.hostname.replace(/^www\./, ''))) {
+    try {
+      const { startLinkedInMsgAssist } = await import(
+        chrome.runtime.getURL('src/service/linkedin-msg-assist.js')
+      );
+      startLinkedInMsgAssist();
+    } catch { /* ignore */ }
+  }
 })();

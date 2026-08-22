@@ -1,13 +1,8 @@
 // JobSimp on-page widget: badge + in-page panel docked as a right side-navbar.
 // Injected at document_start so the panel + page reflow apply before paint.
 //
-// PAGE REFLOW — the recovered technique (single mechanism): set styles via CSSOM on
-// <html> (document.documentElement.style), which is EXEMPT from the page's CSP
-// (unlike an injected <style> tag, which LinkedIn blocks). `margin-right` shrinks the
-// root box so %-based content reflows into the remaining width; `overflow-x:hidden`
-// clips 100vw / fixed chrome (its right edge lands under the panel). This is what
-// overrode 100vw and reflowed LinkedIn. Nothing sets width on <body> — that was the
-// regression. There is exactly one push path here.
+// PAGE REFLOW — on LinkedIn, ALL host document CSS mutations live only in
+// linkedin-dom.js (constrain/release). Elsewhere, widget applies a generic html/body push.
 import { decideView, extractJobId, jobCacheKey } from '../../static/jobUrl.js';
 
 const PUSH_MIN_VW = 640;
@@ -21,6 +16,15 @@ async function loadLinkedInDom() {
   if (!/(^|\.)linkedin\.com$/i.test(location.hostname.replace(/^www\./, ''))) return null;
   try {
     return await import(url('src/service/linkedin-dom.js'));
+  } catch {
+    return null;
+  }
+}
+
+async function loadLinkedInMsgAssist() {
+  if (!/(^|\.)linkedin\.com$/i.test(location.hostname.replace(/^www\./, ''))) return null;
+  try {
+    return await import(url('src/service/linkedin-msg-assist.js'));
   } catch {
     return null;
   }
@@ -40,13 +44,15 @@ export async function startWidget() {
   if (window.top !== window) return;
   if (!chrome.runtime?.id) return;
   if (window.__jobsimpWidget === chrome.runtime.id) return;
-  // Only build where there's something to show (posting → panel, job page → badge).
-  // On 'none' we load nothing; the SW re-injects on navigation to a job URL. (Guard is
-  // set AFTER this check so a later job navigation can still build.)
+  // Build when there's something to show (posting → panel, job/LI page → badge).
+  // On 'none' we load nothing; the SW re-injects on navigation to a matching URL.
+  // Guard is set AFTER this check so a later job navigation can still build.
   if (decideView(location.href) === 'none') return;
   window.__jobsimpWidget = chrome.runtime.id;
 
   const li = await loadLinkedInDom();
+  const liMsg = await loadLinkedInMsgAssist();
+  if (liMsg?.startLinkedInMsgAssist) liMsg.startLinkedInMsgAssist();
 
   const [badgeMarkup, panelMarkup] = await Promise.all([
     loadTemplate('src/component/widget/badge.html'),
@@ -137,6 +143,8 @@ export async function startWidget() {
   let view = 'none';       // decideView(url): 'panel' | 'badge' | 'none'
   let pushListening = false;
   let applying = null;     // active application: { jobKey, resumeId, mode } | null
+  /** After submit: { jobId, resumeId } — locks panel away from pre-apply analysis. */
+  let postSubmit = null;
   let hostNavBtn = null;   // the page's own next/continue button we mirror
 
   const stopDiscoveryTimer = () => { clearTimeout(waitTimer); waitTimer = null; };
@@ -151,88 +159,157 @@ export async function startWidget() {
     window.removeEventListener('resize', onResize);
   }
 
-  // ---- page reflow: FORCE-OVERRIDE by measurement (one mechanism, all CSSOM) ----
-  // Step 1: shrink <html> (margin-right + overflow-x) via CSSOM — instant, CSP-exempt.
-  // Step 2: force-cap. Walk the page and, for any container that is ACTUALLY rendering
-  //   wider than the available width (measured, so it catches 100vw / fixed-width no
-  //   matter the class name), force max-width down with !important inline style. This
-  //   is the "force overwrite parent" — it beats 100vw on LinkedIn or any site without
-  //   guessing selectors. Re-run on an interval because SPAs re-render and reset it.
-  const cappedEls = new Set();
-  let pushTimer = null;
-
-  function forceCapWide(w) {
-    if (!document.body) return;
-    const avail = window.innerWidth - w;
-    const walk = (node, depth) => {
-      if (depth > 5 || !node?.children) return;
-      for (const child of node.children) {
-        if (child.id === 'jobsimp-widget-host') continue;
-        const r = child.getBoundingClientRect();
-        if (r.width > avail + 4 && r.left <= 4 && r.height > 0) { // spans (near) full viewport, left-anchored
-          child.style?.setProperty?.('max-width', `calc(100vw - ${w}px)`, 'important');
-          child.style?.setProperty?.('min-width', '0', 'important');
-          child.style?.setProperty?.('box-sizing', 'border-box', 'important');
-          cappedEls.add(child);
-        }
-        walk(child, depth + 1);
-      }
-    };
-    walk(document.body, 0);
-  }
-  function uncapWide() {
-    for (const c of cappedEls) {
-      if (!c?.style) continue;
-      c.style.removeProperty('max-width'); c.style.removeProperty('min-width'); c.style.removeProperty('box-sizing');
-    }
-    cappedEls.clear();
-  }
-
-  function applyPanelWidth() {
+  // ---- panel width + host resize (two functions only) ----
+  /** TEMP: hard-coded panel width for testing. Restore `panelWidthForVw()` when done. */
+  function setPanelWidth() {
     const panelEl = el('panel');
-    const w = panelWidthForVw();
+    // TODO: remove this
+    const w = 250;
+    // const w = panelWidthForVw();
     if (panelEl?.style) panelEl.style.width = `${w}px`;
-    return w;
+  }
+
+  /** Host column resize — always from panelWidthForVw(), nowhere else. */
+  function resizeHost() {
+    const w = panelWidthForVw();
+    if (window.innerWidth <= PUSH_MIN_VW) {
+      clearHostResize();
+      return;
+    }
+    if (li?.constrainLinkedInOverlays) {
+      li.constrainLinkedInOverlays(w);
+    } else {
+      const html = document.documentElement?.style;
+      if (!html?.setProperty) return;
+      html.setProperty('margin-right', `${w}px`, 'important');
+      html.setProperty('overflow-x', 'hidden', 'important');
+      html.setProperty('transition', 'margin-right .2s ease', 'important');
+      document.body?.style?.setProperty?.('min-width', '0', 'important');
+    }
+    if (liMsg?.syncLinkedInMsgAssist) liMsg.syncLinkedInMsgAssist();
+  }
+
+  function clearHostResize() {
+    if (li?.releaseLinkedInOverlays) li.releaseLinkedInOverlays();
+    else {
+      const html = document.documentElement?.style;
+      if (html?.removeProperty) {
+        html.removeProperty('margin-right');
+        html.removeProperty('overflow-x');
+        html.removeProperty('transition');
+      }
+      document.body?.style?.removeProperty?.('min-width');
+    }
+  }
+
+  let overlayWatch = null;
+  let overlayHadDialog = false;
+  let overlayRaf = 0;
+  const overlayObserved = new WeakSet();
+
+  function promotePanel() {
+    const panelEl = el('panel');
+    if (!panelEl || !panelOpen() || typeof panelEl.showPopover !== 'function') return;
+    try {
+      if (panelEl.getAttribute('popover') !== 'manual') panelEl.setAttribute('popover', 'manual');
+      if (panelEl.matches(':popover-open')) panelEl.hidePopover();
+      panelEl.showPopover();
+    } catch { /* popover unsupported / already open */ }
+  }
+
+  function demotePanel() {
+    const panelEl = el('panel');
+    if (!panelEl) return;
+    try { if (panelEl.matches?.(':popover-open')) panelEl.hidePopover(); } catch { /* ignore */ }
+    panelEl.removeAttribute('popover');
+  }
+
+  /** Observe modal outlets + their shadow roots (body observer cannot see inside shadow). */
+  function ensureOutletObservers() {
+    if (!overlayWatch) return;
+    const opts = { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'open'] };
+    for (const id of ['artdeco-modal-outlet', 'interop-outlet', 'interop-outlet-main', 'msg-overlay']) {
+      const node = document.getElementById(id);
+      if (!node) continue;
+      if (!overlayObserved.has(node)) {
+        overlayObserved.add(node);
+        overlayWatch.observe(node, opts);
+      }
+      const sr = node.shadowRoot;
+      if (sr && !overlayObserved.has(sr)) {
+        overlayObserved.add(sr);
+        overlayWatch.observe(sr, opts);
+      }
+    }
+  }
+
+  function syncHostOverlays() {
+    if (!panelOpen() || !li) return;
+    ensureOutletObservers();
+    if (li.syncLinkedInHostPins) li.syncLinkedInHostPins(panelWidthForVw());
+    else resizeHost();
+    const hasApplyDialog = !!li.linkedInApplyRoot?.();
+    if (hasApplyDialog && !overlayHadDialog) promotePanel();
+    if (!hasApplyDialog && overlayHadDialog) demotePanel();
+    overlayHadDialog = hasApplyDialog;
+  }
+
+  function startOverlayWatch() {
+    stopOverlayWatch();
+    overlayHadDialog = false;
+    if (!document.body) return;
+    overlayWatch = new MutationObserver(() => {
+      if (overlayRaf) return;
+      overlayRaf = requestAnimationFrame(() => {
+        overlayRaf = 0;
+        syncHostOverlays();
+      });
+    });
+    overlayWatch.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'open'],
+    });
+    ensureOutletObservers();
+    syncHostOverlays();
+    promotePanel();
+  }
+  function stopOverlayWatch() {
+    overlayWatch?.disconnect();
+    overlayWatch = null;
+    overlayHadDialog = false;
+    if (overlayRaf) { cancelAnimationFrame(overlayRaf); overlayRaf = 0; }
   }
 
   function applyPush() {
-    const w = applyPanelWidth();
-    if (window.innerWidth <= PUSH_MIN_VW) { clearPush(); return; } // narrow screens: overlay is fine
-    const htmlStyle = document.documentElement?.style;
-    if (!htmlStyle?.setProperty) return;
-    htmlStyle.setProperty('margin-right', `${w}px`, 'important');
-    htmlStyle.setProperty('overflow-x', 'hidden', 'important');
-    htmlStyle.setProperty('transition', 'margin-right .2s ease', 'important');
-    document.body?.style?.setProperty?.('min-width', '0', 'important');
-    forceCapWide(w);
-    clearInterval(pushTimer);
-    pushTimer = setInterval(() => { if (panelOpen()) forceCapWide(w); }, 1000); // re-cap after SPA re-renders
+    setPanelWidth();
+    resizeHost();
+    if (li) startOverlayWatch();
   }
   function clearPush() {
-    clearInterval(pushTimer); pushTimer = null;
-    const htmlStyle = document.documentElement?.style;
-    if (htmlStyle?.removeProperty) {
-      htmlStyle.removeProperty('margin-right');
-      htmlStyle.removeProperty('overflow-x');
-      htmlStyle.removeProperty('transition');
-    }
-    document.body?.style?.removeProperty?.('min-width');
-    uncapWide();
+    stopOverlayWatch();
+    clearHostResize();
   }
-  const onResize = () => { if (panelOpen()) applyPush(); else applyPanelWidth(); };
+  const onResize = () => {
+    setPanelWidth();
+    if (panelOpen()) resizeHost();
+  };
 
   function openPanel() {
     dismissedUrl = null;
     const badge = el('badge');
     const panelEl = el('panel');
     if (badge) badge.style.display = 'none';
-    applyPanelWidth();
+    setPanelWidth();
     panelEl?.classList.add('open');
+    promotePanel();
     requestAnimationFrame(applyPush);
     if (!pushListening) { window.addEventListener('resize', onResize); pushListening = true; }
   }
-  applyPanelWidth(); // initial width before first open
+  setPanelWidth(); // initial width before first open
   function closePanel() {
+    demotePanel();
     el('panel')?.classList.remove('open');
     clearPush();
     dismissedUrl = pageUrl();
@@ -242,6 +319,7 @@ export async function startWidget() {
   function unloadPanel() {
     stopDiscoveryTimer();
     currentJD = null;
+    demotePanel();
     el('panel')?.classList.remove('open');
     clearPush();
     const badge = el('badge');
@@ -464,7 +542,8 @@ export async function startWidget() {
 
   /** Apply analysis payload to the panel. Does not touch status — callers set that. */
   function applyAnalysis(d) {
-    if (applying) return; // application mode owns the panel
+    // Apply + post-submit own the panel — don't resurrect "before applying" after success.
+    if (applying || postSubmit) return;
     applyBackfill(d.job);
     if (d.match) renderScore(d.match);
     renderAnalysis(d.analysis);
@@ -473,7 +552,7 @@ export async function startWidget() {
 
   // ---- AI analysis: session by jobId → SW cache → LLM ----
   async function runAnalysis({ force = false } = {}) {
-    if (applying) return; // mid-transaction: the panel is in application mode, never analysis
+    if (applying || postSubmit) return; // apply / post-submit own the panel
     if (!currentJD) return;
     const r = currentResume();
     if (!r) { setStatus('Pick a parsed resume to analyze.', 'warn'); return; }
@@ -599,8 +678,8 @@ export async function startWidget() {
     tick();
   }
 
-  // The quick decision: posting → open the panel; job listing/search → badge only;
-  // non-job → unload. Background-scrapes either way so opening is instant.
+  // The quick decision: posting → open the panel; job listing / any LinkedIn page → badge;
+  // non-job (other sites) → unload. Background-scrapes either way so opening is instant.
   function applyView() {
     view = decideView(pageUrl());
     if (view === 'none') { unloadPanel(); return; }
@@ -699,8 +778,6 @@ export async function startWidget() {
   const SUBMITTED_RE = /(thank you for applying|application (has been |was )?(submitted|received|sent)|successfully (submitted|applied)|your application was sent)/i;
 
   let submitPoll = null;
-  /** After submit: { jobId, resumeId } for outreach compose handoff. */
-  let postSubmit = null;
 
   function submittedPageText() {
     let text = (document.body?.innerText || '').slice(0, 6000);
@@ -719,6 +796,13 @@ export async function startWidget() {
     el('postSubmitBox').style.display = 'block';
     el('applyRow').style.display = 'none';
     el('navBtn').style.display = 'none';
+    el('applyBox').style.display = 'none';
+    el('matchBox').style.display = 'none';
+    el('analysisBox').style.display = 'none';
+    el('analyzeBtn').style.display = 'none';
+    el('skeleton').style.display = 'none';
+    // Let LinkedIn's success modal own the page; don't keep panel in top-layer.
+    demotePanel();
   }
 
   function hidePostSubmitUI() {
@@ -749,7 +833,7 @@ export async function startWidget() {
     return btns.find((b) => NAV_RE.test((b.textContent || b.value || '').replace(/\s+/g, ' ').trim())) || null;
   }
 
-  function setApplyUI(on) {
+  function setApplyUI(on, { restoreAnalysis = false } = {}) {
     el('panel').classList.toggle('applying', !!on);
     el('applyRow').style.display = on ? 'none' : 'grid';
     el('applyBox').style.display = on ? 'flex' : 'none';
@@ -761,12 +845,33 @@ export async function startWidget() {
       el('analyzeBtn').style.display = 'none';
       document.addEventListener('click', onHostClick, true);
       startSubmitPoll();
+      if (panelOpen()) requestAnimationFrame(applyPush);
     } else {
       el('qaList').innerHTML = '';
       hostNavBtn = null;
       document.removeEventListener('click', onHostClick, true);
       stopSubmitPoll();
+      el('applyRow').style.display = postSubmit ? 'none' : 'grid';
+      if (restoreAnalysis && !postSubmit && currentJD && user && resumes.length) {
+        el('matchBox').style.display = '';
+        el('analysisBox').style.display = '';
+        el('analyzeBtn').style.display = 'inline-flex';
+        runAnalysis();
+      }
     }
+  }
+
+  /** Reload / explicit reset → JD analysis; apply only restarts on user click. */
+  async function resetToJdAnalysis() {
+    if (applying) await send('application.abandon', { ...applying });
+    applying = null;
+    fillBusy = false;
+    stopSubmitPoll();
+    setApplyUI(false, { restoreAnalysis: true });
+    hidePostSubmitUI();
+    el('skeleton').style.display = 'none';
+    setStatus('');
+    if (currentJD) renderJob();
   }
 
   // ANY host save/continue/next click during a transaction refreshes our panel:
@@ -855,15 +960,17 @@ export async function startWidget() {
 
   /** Submitted page → finalize: job saved w/ extract, ephemeral data purged. */
   async function checkSubmitted() {
-    if (!applying) return false;
+    if (!applying || postSubmit) return false;
     if (!SUBMITTED_RE.test(submittedPageText())) return false;
     const done = { ...applying };
     const resumeId = done.resumeId || '';
+    // Lock post-submit UI before clearing applying so async analysis can't resurrect.
+    showPostSubmitUI('', resumeId);
     applying = null;
-    const res = await send('application.complete', done);
     setApplyUI(false);
+    const res = await send('application.complete', done);
     const jobId = res?.data?.trackedJobId || '';
-    showPostSubmitUI(jobId, resumeId);
+    if (postSubmit) postSubmit.jobId = jobId;
     setStatus('Application submitted — saved to your dashboard. 🎉', 'ok');
     return true;
   }
@@ -904,21 +1011,19 @@ export async function startWidget() {
   window.addEventListener('popstate', onUrlChange);
   setInterval(() => { if (!dead && alive() && pageUrl() !== lastUrl) onUrlChange(); }, 500);
 
-  // We only build on job URLs (gated above). Decide per-URL: posting → open panel,
-  // job listing/search → badge only.
+  // We only build when decideView ≠ none (gated above). Per-URL: posting → panel,
+  // job listing / any LinkedIn page → badge only.
   applyView();
 
-  // Rehydrate a mid-flight application after a full page reload: the SW still holds
-  // this tab's context and the transaction row has every earlier answer.
+  // Fresh page load → always JD analysis; never resume mid-apply after reload.
   (async () => {
-    const res = await send('application.context');
-    const ctx = res?.data;
-    if (!ctx?.jobKey || applying) return;
-    applying = { jobKey: ctx.jobKey, resumeId: ctx.resumeId, mode: ctx.mode || 'apply' };
-    openPanel();
-    await bootstrap();
-    fillResumeSelect();
-    setApplyUI(true);
-    setTimeout(async () => { if (applying && !(await checkSubmitted())) fillCurrentPage(); }, 1200);
+    await send('application.abandon', {});
+    applying = null;
+    fillBusy = false;
+    setApplyUI(false);
   })();
+
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) resetToJdAnalysis();
+  });
 }

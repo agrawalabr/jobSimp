@@ -306,6 +306,12 @@ t('decideView LinkedIn search listing vs selected job', () => {
   eq(decideView('https://www.linkedin.com/jobs/search/?keywords=data%20engineer'), 'badge');
   eq(decideView('https://www.linkedin.com/jobs/search/?currentJobId=4428456441&keywords=data%20engineer'), 'panel');
 });
+t('decideView LinkedIn non-jobs pages still get badge', () => {
+  eq(decideView('https://www.linkedin.com/feed/'), 'badge');
+  eq(decideView('https://www.linkedin.com/messaging/'), 'badge');
+  eq(decideView('https://www.linkedin.com/in/someone/'), 'badge');
+  eq(decideView('https://www.linkedin.com/jobs/view/4440054893/'), 'panel');
+});
 
 console.log('\nlinkedin-dom.js');
 t('isLinkedInHost', () => {

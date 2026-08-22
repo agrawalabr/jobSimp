@@ -19,8 +19,9 @@ export function isJobUrl(u = location.href) {
 }
 
 // Pure job hosts: the whole domain is jobs, so even the root is a job page (→ badge).
-// Aggregators (LinkedIn, Indeed, Glassdoor…) are deliberately NOT here — for them a
-// page only counts as a job page if the PATH is job-ish (so /feed, /messaging → none).
+// Aggregators other than LinkedIn (Indeed, Glassdoor…) are deliberately NOT here —
+// for them a page only counts as a job page if the PATH is job-ish.
+// LinkedIn is handled specially in decideView (badge on every LI URL).
 export const ATS_HOST = /(greenhouse\.io|lever\.co|myworkdayjobs\.com|workday\.com|ashbyhq\.com|icims\.com|smartrecruiters\.com|jobvite\.com|bamboohr\.com|workable\.com|recruitee\.com|breezy\.hr|applytojob\.com|rippling\.com|dover\.com|taleo\.net|successfactors\.(com|eu)|adp\.com|eightfold\.ai|teamtailor\.com|pinpointhq\.com|personio\.(de|com)|gem\.com|jobright\.ai|simplify\.jobs|workatastartup\.com|hiring\.cafe|otta\.com|remoteok\.com|weworkremotely\.com|wellfound\.com|builtin\.com)$/i;
 
 // A SPECIFIC job posting (has an id / view path) vs a listing / search / landing.
@@ -62,14 +63,19 @@ export function isJobPosting(u = location.href) {
 /**
  * Quick decision for the content script: what to show on this URL.
  *   'panel'  → a specific job posting → open the docked panel
- *   'badge'  → a job site page (listing / search / careers / ATS root) → badge only
- *   'none'   → not a job page (incl. aggregator feed/search-home) → load nothing
+ *   'badge'  → job listing / ATS root / any LinkedIn page → badge only
+ *   'none'   → not a job page (e.g. Indeed home without a jobs path) → load nothing
+ *
+ * LinkedIn: load the widget on every LI URL (feed, messaging, profile…).
+ * Only a concrete /jobs/view/… posting auto-opens the panel; everywhere else is badge.
  */
 export function decideView(u = location.href) {
   if (isJobPosting(u)) return 'panel';
   try {
     const { hostname, pathname } = new URL(u, typeof location !== 'undefined' ? location.href : u);
-    if (ATS_HOST.test(hostname.replace(/^www\./, '')) || JOB_PATH.test(pathname)) return 'badge';
+    const host = hostname.replace(/^www\./, '');
+    if (/(^|\.)linkedin\.com$/i.test(host)) return 'badge';
+    if (ATS_HOST.test(host) || JOB_PATH.test(pathname)) return 'badge';
     return 'none';
   } catch {
     return 'none';

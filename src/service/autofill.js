@@ -793,7 +793,11 @@ export async function runAutofill() {
     if (isLinkedInHost()) {
       const li = await ensureLinkedInApplicationForm({ sleep });
       if (!li.ok) { report({ error: li.error || 'Could not open LinkedIn application form.' }); return; }
-      applyScope = li.root || document;
+      if (!li.root || li.root === document) {
+        report({ error: 'Easy Apply form not open. Click Easy Apply, then Apply again.' });
+        return;
+      }
+      applyScope = li.root;
     } else {
       applyScope = document;
     }

@@ -70,8 +70,7 @@
     "https://jobs.gem.com/*",
     "https://*.gem.com/*",
 
-    "https://*.linkedin.com/jobs/*",
-    "https://*.linkedin.com/jobs/view/*",
+    "https://*.linkedin.com/*",
     "https://*.indeed.com/*",
     "https://*.glassdoor.com/*",
     "https://*.ziprecruiter.com/*",
@@ -150,8 +149,7 @@
         "https://jobs.gem.com/*",
         "https://*.gem.com/*",
 
-        "https://*.linkedin.com/jobs/*",
-        "https://*.linkedin.com/jobs/view/*",
+        "https://*.linkedin.com/*",
         "https://*.indeed.com/*",
         "https://*.glassdoor.com/*",
         "https://*.ziprecruiter.com/*",

@@ -1,6 +1,6 @@
 // Draft/copy helpers (LLM draft, signature, greeting). SW-only — needs LLM keys.
 import { requestLLM, extractJson } from '../service/llm.js';
-import { EMAIL_DRAFT_PROMPT } from '../static/prompts.js';
+import { EMAIL_DRAFT_PROMPT, LINKEDIN_MSG_DRAFT_PROMPT } from '../static/prompts.js';
 import { recipientGreetingName } from '../static/recipients.js';
 import { compactSignatureHtml, htmlLastLineEmpty } from '../static/signatures.js';
 
@@ -294,5 +294,107 @@ ${jdGraph ? JSON.stringify(jdGraph) : '(none)'}`;
     provider,
     model: model || '',
     via: 'llm',
+  };
+}
+
+/**
+ * LinkedIn messaging — ONE place that packages the LLM prompt.
+ * Mode + resume/JD gating resolved here (not in the page UI).
+ */
+export async function draftLinkedInMessage(settings, params = {}) {
+  const { provider, model, keys } = settings?.ai || {};
+  const key = keys?.[provider];
+  if (!provider) throw new Error('No AI provider configured. Set one in Settings.');
+  if (!key) throw new Error(`No API key for ${provider}. Add it in Settings, then try again.`);
+
+  const userNote = String(params.userNote || '').trim();
+  const chatHistory = String(params.chatHistory || '').trim();
+  const peerBlurb = String(params.peerBlurb || '').trim();
+  const maxChars = Number(params.maxChars) > 0 ? Math.floor(Number(params.maxChars)) : 0;
+  const attachResume = !!params.attachResume;
+  const surface = params.surface === 'invite' || params.mode === 'invite' ? 'invite' : 'message';
+
+  // Auto mode: empty thread + empty note → outreach; else chat (priority encoded in prompt).
+  let mode = 'chat';
+  if (surface === 'invite') mode = 'invite';
+  else if (!chatHistory && !userNote) mode = 'outreach';
+  else mode = 'chat';
+
+  const careerDemand = /\b(resume|cv|background|experience|skills?|qualification|portfolio|job\s*desc|jd\b|role|position|interview|apply|hiring|salary|tech\s*stack|projects?)\b/i
+    .test(`${userNote}\n${chatHistory}`);
+
+  // Resume/JD only for outreach/invite, or when chat/note asks for career facts.
+  const useResume = !!params.identity && (mode === 'outreach' || mode === 'invite' || careerDemand);
+  const useJd = !!(params.jdGraph || params.jdExtract || params.company || params.role)
+    && (mode === 'outreach' || mode === 'invite' || careerDemand);
+
+  const userGraph = useResume ? compactUserGraph(params.identity || {}) : null;
+  const jdGraph = useJd ? (params.jdGraph || params.jdExtract || null) : null;
+  const company = useJd ? String(params.company || '').trim() : '';
+  const role = useJd ? String(params.role || '').trim() : '';
+  const recipients = Array.isArray(params.recipients) ? params.recipients : [];
+  const recipientMeta = {
+    ...recipientPromptView(recipients, false),
+    peerBlurb: peerBlurb || undefined,
+  };
+
+  const priorityLine = userNote
+    ? 'PRIORITY_ACTIVE: USER_NOTE first; CHAT_HISTORY supporting only'
+    : chatHistory
+      ? 'PRIORITY_ACTIVE: CHAT_HISTORY only (100%)'
+      : 'PRIORITY_ACTIVE: outreach cold open from PEER';
+
+  const prompt = `${LINKEDIN_MSG_DRAFT_PROMPT}
+
+MODE: ${mode}
+${priorityLine}
+MAX_CHARS: ${maxChars || '(none)'}
+ATTACH_RESUME: ${attachResume ? 'true — file attached in UI; do NOT mention attachment in body' : 'false'}
+
+CHAT_HISTORY (oldest → newest):
+${chatHistory || '(none)'}
+
+USER_NOTE:
+${userNote || '(none)'}
+
+PEER:
+${JSON.stringify(recipientMeta)}
+
+RESUME_FACTS (${useResume ? 'allowed' : 'WITHHOLD'}):
+${useResume ? JSON.stringify(userGraph) : '(not provided)'}
+
+JD_FACTS (${useJd ? 'allowed' : 'WITHHOLD'}):
+${useJd
+    ? JSON.stringify({ company: company || undefined, role: role || undefined, ...(jdGraph || {}) })
+    : '(not provided)'}`;
+
+  const raw = await requestLLM({
+    provider,
+    model,
+    key,
+    prompt,
+    config: { temperature: mode === 'chat' ? 0.75 : 0.7, maxTokens: maxChars && maxChars <= 300 ? 400 : 700 },
+  });
+  if (!raw || !String(raw).trim()) {
+    throw new Error(`${provider} returned an empty response. Check your key/model and try again.`);
+  }
+  const out = extractJson(raw);
+  let body = String(out?.body || '').trim();
+  if (!body) throw new Error('Model did not return JSON with body. Try again.');
+  if (looksLikeStubOrDump(body)) throw new Error('Rejected low-quality draft. Try a clearer note.');
+  if (maxChars && body.length > maxChars) {
+    body = body.slice(0, maxChars - 1).replace(/\s+\S*$/, '').trim();
+    if (body.length > maxChars) body = body.slice(0, maxChars);
+  }
+  const subject = mode === 'outreach' ? String(out?.subject || '').trim() : '';
+  return {
+    body,
+    subject,
+    provider,
+    model: model || '',
+    via: 'llm',
+    mode,
+    usedResume: useResume,
+    usedJd: useJd,
   };
 }
